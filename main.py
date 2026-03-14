@@ -18,7 +18,7 @@ GMAIL_USER         = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 SITE_EMAIL         = os.getenv("SITE_EMAIL")
 SITE_PASSWORD      = os.getenv("SITE_PASSWORD")
-OTP_SUBJECT_PREFIX = "Forwarded SMS From:"  # sender domain changes (mailer1/2/3/4...) but subject is always consistent
+OTP_SUBJECT_PREFIX = "Forward SMS From:"  # sender domain changes (mailer1/2/3/4...) but subject is always consistent
 
 # Webshare proxy — set these in .env
 # Format: 82.23.96.252:7478  (host:port only, credentials separate)
@@ -196,7 +196,7 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
             mail.select("inbox")
 
             # Search by subject — sender domain changes (mailer1/2/3/4)
-            # but subject always starts with "Forwarded SMS From:"
+            # but subject always starts with "Forward SMS From:"
             _, data = mail.search(None, f'(SUBJECT "{OTP_SUBJECT_PREFIX}")')
             ids = data[0].split()
             print(f"  📬 Found {len(ids)} email(s) with subject '{OTP_SUBJECT_PREFIX}'")
