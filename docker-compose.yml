@@ -1,0 +1,45 @@
+services:
+
+  # ── Scraper ────────────────────────────────────────────────────────────────
+  # Does the actual work. Normally triggered by the scheduler.
+  # Can also be triggered manually at any time (see README).
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: monprospecteur_scraper
+    env_file: .env
+    environment:
+      HTTP_PROXY:           "http://prbspgoz:x8f4iu7gqoet@82.23.96.252:7478"
+      HTTPS_PROXY:          "http://prbspgoz:x8f4iu7gqoet@82.23.96.252:7478"
+      ALL_PROXY:            "http://prbspgoz:x8f4iu7gqoet@82.23.96.252:7478"
+      SESSION_FILE:         "/app/session/session.json"
+      PLAYWRIGHT_HEADLESS:  "true"
+      TZ:                   "America/Toronto"
+    volumes:
+      - ./session:/app/session       # session.json persists across runs
+      - ./output:/app/output         # all PDFs, JSONs, logs land here on host
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.json:/app/token.json
+    shm_size: '2gb'
+    cap_add:
+      - SYS_ADMIN
+    # No restart policy — scraper runs once and exits
+    # restart: no  (default — runs once and exits cleanly)
+
+  # ── Scheduler ──────────────────────────────────────────────────────────────
+  # Lightweight container that wakes up every 30s, checks the time,
+  # and triggers the scraper at 05:00 Toronto time daily.
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
+    container_name: monprospecteur_scheduler
+    environment:
+      TZ:              "America/Toronto"
+      SCHEDULE_HOUR:   "5"    # 5 AM Toronto time
+      SCHEDULE_MINUTE: "0"
+    volumes:
+      - ./output:/app/output   # shares the same output folder
+      - /var/run/docker.sock:/var/run/docker.sock  # allows scheduler to start scraper container
+    restart: unless-stopped    # always running, restarts if server reboots

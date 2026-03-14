@@ -1,0 +1,18 @@
+# Credentials — never commit these
+.env
+credentials.json
+token.json
+session/
+session.json
+
+# Output files — too large for git
+output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
