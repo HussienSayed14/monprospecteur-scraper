@@ -17,8 +17,10 @@ Usage:
 import json
 from pathlib import Path
 from datetime import datetime, timezone
+import zoneinfo
 
-LOGS_DIR = Path("output/logs")
+TORONTO_TZ = zoneinfo.ZoneInfo("America/Toronto")
+LOGS_DIR   = Path("output/logs")
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -30,12 +32,12 @@ class RunLogger:
         self._write_header()
 
     def _now(self) -> str:
-        return datetime.now(timezone.utc).strftime("%H:%M:%S")
+        return datetime.now(TORONTO_TZ).strftime("%H:%M:%S %Z")
 
     def _write_header(self):
         self._append_raw(f"{'='*60}")
         self._append_raw(f"MonProspecteur Scraper — Run {self.run_id}")
-        self._append_raw(f"Started: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        self._append_raw(f"Started: {datetime.now(TORONTO_TZ).strftime('%Y-%m-%d %H:%M:%S %Z')}")
         self._append_raw(f"{'='*60}")
 
     def _append_raw(self, line: str):
@@ -76,7 +78,7 @@ class RunLogger:
     def finish(self, succeeded: int, failed: int):
         self._append_raw("")
         self._append_raw(f"{'='*60}")
-        self._append_raw(f"Run finished: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        self._append_raw(f"Run finished: {datetime.now(TORONTO_TZ).strftime('%Y-%m-%d %H:%M:%S %Z')}")
         self._append_raw(f"Succeeded: {succeeded}  |  Failed: {failed}")
         self._append_raw(f"{'='*60}")
         print(f"\n📄 Log saved → {self.log_path.resolve()}")
