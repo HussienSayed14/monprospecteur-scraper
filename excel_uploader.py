@@ -110,14 +110,14 @@ LEAD_SOURCE_MAP = {
 # Tracks how many leads have been scraped today within this run.
 _ref_counter: dict = {}  # key: "YYYYMMDD" -> count
 
-def _next_ref_number(date: datetime = None) -> str: # type: ignore
+def _next_ref_number() -> str:
     """
     Generate: JLR + YYYYMMDD + zero-padded 2-digit sequence per day.
-    Example: JLR2025120601, JLR2025120602 ...
-    Date is in Toronto timezone — counter resets each Toronto calendar day.
+    Always uses TODAY's date in Toronto timezone — not the lead's published date.
+    Example: JLR2026031401, JLR2026031402 ...
+    Counter resets each Toronto calendar day.
     """
-    toronto_now = datetime.now(TORONTO_TZ)
-    d = (date.astimezone(TORONTO_TZ) if date and hasattr(date, "tzinfo") and date.tzinfo else toronto_now).strftime("%Y%m%d")
+    d = datetime.now(TORONTO_TZ).strftime("%Y%m%d")
     _ref_counter[d] = _ref_counter.get(d, 0) + 1
     return f"JLR{d}{_ref_counter[d]:02d}"
 
@@ -303,7 +303,7 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
         "Lead Source":    LEAD_SOURCE_MAP.get(doc_type, doc_type),
 
         # JLR + YYYYMMDD + 2-digit sequence  e.g. JLR2026031401
-        "Reference Number": _next_ref_number(pub_date),
+        "Reference Number": _next_ref_number(),
 
         # Municipal assessment price (cleaned integer string)
         "Price":          price,

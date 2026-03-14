@@ -20,6 +20,9 @@ Usage:
 import os
 import json
 import smtplib
+import zoneinfo
+
+TORONTO_TZ = zoneinfo.ZoneInfo("America/Toronto")
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -36,6 +39,19 @@ DEFAULT_TO         = os.getenv("SUMMARY_EMAIL_TO", GMAIL_USER)  # default: send 
 
 
 # ── HTML email builder ────────────────────────────────────────────────────────
+
+def _fmt_toronto(iso_str: str) -> str:
+    """Convert ISO UTC string to Toronto local time string."""
+    if not iso_str:
+        return "N/A"
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        dt_toronto = dt.astimezone(TORONTO_TZ)
+        return dt_toronto.strftime("%Y-%m-%d %H:%M:%S %Z")
+    except Exception:
+        return iso_str
+
 
 def build_html_body(stats: dict, sheet_ok: bool = True, sheet_log: list = None) -> str: # type: ignore
     succeeded = stats.get("succeeded", [])
@@ -138,7 +154,7 @@ to re-authenticate, then run <code>python main.py --retry-uploads</code></p>
 
 <div class="stats">
   <table>
-    <tr><td>Run date</td>       <td><b>{stats.get('run_started_at','')[:19].replace('T',' ')} UTC</b></td></tr>
+    <tr><td>Run date</td>       <td><b>{_fmt_toronto(stats.get('run_started_at',''))}</b></td></tr>
     <tr><td>Duration</td>       <td>{duration_str}</td></tr>
     <tr><td>Status</td>         <td class="status">{status_label}</td></tr>
     <tr><td>Total fetched</td>  <td>{stats.get('total_fetched', 0)}</td></tr>

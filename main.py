@@ -80,7 +80,7 @@ for d in [PDFS_DIR, PRINTS_DIR, DATA_DIR, FAILED_DIR]:
 @dataclass
 class RunStats:
     run_started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    run_finished_at: datetime = None  # type: ignore
+    run_finished_at: datetime = None # type: ignore
 
     total_fetched: int = 0          # all docs from API
     total_unread: int = 0           # docs with isRead == False
@@ -131,11 +131,15 @@ class RunStats:
         })
 
     def print_summary(self):
+        import zoneinfo
+        toronto = zoneinfo.ZoneInfo("America/Toronto")
+        started_str  = self.run_started_at.astimezone(toronto).strftime("%Y-%m-%d %H:%M:%S %Z")
+        finished_str = self.run_finished_at.astimezone(toronto).strftime("%Y-%m-%d %H:%M:%S %Z") if self.run_finished_at else "N/A"
         print(f"\n{'=' * 60}")
         print("📊 RUN SUMMARY")
         print(f"{'=' * 60}")
-        print(f"  Started       : {self.run_started_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        print(f"  Finished      : {self.run_finished_at.strftime('%Y-%m-%d %H:%M:%S UTC') if self.run_finished_at else 'N/A'}")
+        print(f"  Started       : {started_str}")
+        print(f"  Finished      : {finished_str}")
         print(f"  Duration      : {round(self.duration_seconds)}s")
         print(f"  Total fetched : {self.total_fetched}")
         print(f"  Unread leads  : {self.total_unread}")
@@ -192,7 +196,7 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
         time.sleep(wait)
         try:
             mail = imaplib.IMAP4_SSL("imap.gmail.com")
-            mail.login(GMAIL_USER, GMAIL_APP_PASSWORD)  # type: ignore
+            mail.login(GMAIL_USER, GMAIL_APP_PASSWORD) # type: ignore
             mail.select("inbox")
 
             # Search by subject — sender domain changes (mailer1/2/3/4)
@@ -208,13 +212,13 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
             # Check most recent emails first
             for email_id in reversed(ids):
                 _, msg_data = mail.fetch(email_id, "(RFC822)")
-                msg = email.message_from_bytes(msg_data[0][1])  # type: ignore
+                msg = email.message_from_bytes(msg_data[0][1]) # type: ignore
 
                 date_str = msg.get("Date")
                 print(f"  📧 Checking email dated: {date_str}")
 
                 try:
-                    email_time = email.utils.parsedate_to_datetime(date_str)  # type: ignore
+                    email_time = email.utils.parsedate_to_datetime(date_str) # type: ignore
                     if email_time.tzinfo is None:
                         email_time = email_time.replace(tzinfo=timezone.utc)
                 except Exception:
@@ -229,18 +233,18 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
                             ct = part.get_content_type()
                             if ct == "text/plain":
                                 try:
-                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")  # type: ignore
+                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore") # type: ignore
                                     break
                                 except Exception:
                                     pass
                             elif ct == "text/html" and not body:
                                 try:
-                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")  # type: ignore
+                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore") # type: ignore
                                 except Exception:
                                     pass
                     else:
                         try:
-                            body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")  # type: ignore
+                            body = msg.get_payload(decode=True).decode("utf-8", errors="ignore") # type: ignore
                         except Exception:
                             body = str(msg.get_payload())
 
@@ -385,7 +389,7 @@ def fetch_all_documents(session: requests.Session, log=None) -> list:
             break
         page_num += 1
         t = random.uniform(3.0, 6.0)
-        log.info(f'Page {page_num} fetched — waiting {t:.1f}s before next page')  # type: ignore
+        log.info(f'Page {page_num} fetched — waiting {t:.1f}s before next page') # type: ignore
         time.sleep(t)
 
     msg = f"Total documents fetched: {len(all_docs)}"
@@ -604,7 +608,7 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
     if log: log.info("Fetching detail API", doc=doc_id)
     try:
         human_delay(1.0, 3.0)
-        detail = fetch_document_details(doc_id, req_session)  # type: ignore
+        detail = fetch_document_details(doc_id, req_session) # type: ignore
         if detail is None:
             raise Exception("Empty response from detail API")
         detail_path = DATA_DIR / f"detail_{doc_id}.json"
@@ -621,7 +625,7 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
         if log: log.info("Downloading act PDF", doc=doc_id, act=act_id)
         try:
             human_delay(1.5, 4.0)
-            act_pdf = download_act_pdf(doc_id, act_id, req_session)  # type: ignore
+            act_pdf = download_act_pdf(doc_id, act_id, req_session) # type: ignore
             if act_pdf is None:
                 raise Exception("act PDF download returned None")
             if log: log.ok("Act PDF saved", path=act_pdf)
@@ -636,7 +640,7 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
         if log: log.info("Rendering print PDF", doc=doc_id)
         try:
             human_delay(2.0, 4.0)
-            print_pdf = download_print_pdf(doc_id, page)  # type: ignore
+            print_pdf = download_print_pdf(doc_id, page) # type: ignore
             if print_pdf is None:
                 raise Exception("print PDF returned None")
             if log: log.ok("Print PDF saved", path=print_pdf)
@@ -654,7 +658,7 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
         try:
             from run_history import record_scrape
             record_scrape(
-                doc_id      = doc_id,  # type: ignore
+                doc_id      = doc_id, # type: ignore
                 address     = address,
                 lead_source = doc.get("type", ""),
                 run_id      = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S'),
@@ -704,7 +708,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         browser = p.chromium.launch(
             headless=headless,
             args=["--disable-blink-features=AutomationControlled"],
-            proxy=proxy_config,  # type: ignore
+            proxy=proxy_config, # type: ignore
         )
         log.info("Browser launched", headless=headless)
 
@@ -845,7 +849,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             detail_path = DATA_DIR / f"detail_{doc_id}.json"
             detail_doc  = json.loads(detail_path.read_text()) if detail_path.exists() else None
             list_doc    = next((d for d in source_docs if d.get("_id") == doc_id), {})
-            row         = clean_lead(list_doc, detail_doc)  # type: ignore
+            row         = clean_lead(list_doc, detail_doc) # type: ignore
 
             # Fill Source motivation from property_history API result
             row["Source motivation"] = source_motivation_map.get(doc_id, "")
@@ -906,7 +910,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
                 doc_id   = doc_id,
                 ok       = drive_ok,
                 url      = drive_url,
-                error    = drive_err,  # type: ignore
+                error    = drive_err, # type: ignore
                 attempts = len(drive_log) + 1,
             )
 
@@ -974,12 +978,12 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         record_sheet_result(
             doc_ids = [s["id"] for s in stats.succeeded],
             ok      = sheet_ok,
-            error   = sheet_err,  # type: ignore
+            error   = sheet_err, # type: ignore
         )
 
         # Record sheet result in stats
-        stats.upload_sheet_ok  = sheet_ok  # type: ignore
-        stats.upload_sheet_log = sheet_log  # type: ignore
+        stats.upload_sheet_ok  = sheet_ok # type: ignore
+        stats.upload_sheet_log = sheet_log # type: ignore
 
         # ── Save failed uploads queue for manual --retry-uploads ───────
         permanently_failed = [
@@ -1018,8 +1022,8 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         for r in stats.succeeded:
             r["drive_upload_ok"]  = r.get("drive_upload_ok", True)
             r["drive_upload_log"] = r.get("drive_upload_log", [])
-        stats.upload_sheet_ok  = getattr(stats, "upload_sheet_ok", True)  # type: ignore
-        stats.upload_sheet_log = getattr(stats, "upload_sheet_log", [])  # type: ignore
+        stats.upload_sheet_ok  = getattr(stats, "upload_sheet_ok", True) # type: ignore
+        stats.upload_sheet_log = getattr(stats, "upload_sheet_log", []) # type: ignore
 
         # Finish log and attach to email
         log.finish(
