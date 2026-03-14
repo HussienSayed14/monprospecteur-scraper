@@ -80,11 +80,10 @@ def _get_service():
     if Path(TOKEN_FILE).exists():
         try:
             creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-        except Exception as e:
-            raise GoogleAuthError(
-                f"token.json is corrupt or missing required scopes: {e}\n"
-                f"Fix: delete token.json and run: python sheets_uploader.py"
-            )
+        except Exception:
+            print("  ⚠️  token.json is corrupt — will re-authenticate")
+            Path(TOKEN_FILE).unlink(missing_ok=True)
+            creds = None
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -98,10 +97,23 @@ def _get_service():
                     f"Fix: delete token.json and run: python sheets_uploader.py"
                 )
         else:
-            raise GoogleAuthError(
-                f"No valid token.json found.\n"
-                f"Fix: delete token.json and run: python sheets_uploader.py"
-            )
+            if not Path(CREDENTIALS_FILE).exists():
+                raise GoogleAuthError(
+                    f"credentials.json not found at: {CREDENTIALS_FILE}\n"
+                    f"Download it from Google Cloud Console → APIs & Services → Credentials"
+                )
+            import os
+            if os.getenv("PLAYWRIGHT_HEADLESS", "").lower() == "true" or not os.getenv("DISPLAY", "") and os.name != "nt":
+                raise GoogleAuthError(
+                    f"Running headless — cannot open browser for re-auth.\n"
+                    f"Fix: On your LOCAL machine run: python sheets_uploader.py\n"
+                    f"Then copy the generated token.json to the server."
+                )
+            print("  🔐 Opening browser for Google authentication...")
+            flow  = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            creds = flow.run_local_server(port=0)
+            Path(TOKEN_FILE).write_text(creds.to_json())
+            print(f"  ✅ Authenticated — token saved to {TOKEN_FILE}")
 
     return build("drive", "v3", credentials=creds)
 
