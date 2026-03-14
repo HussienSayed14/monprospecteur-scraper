@@ -103,9 +103,10 @@ def _get_service():
                     f"Download it from Google Cloud Console → APIs & Services → Credentials"
                 )
             import os
-            if os.getenv("PLAYWRIGHT_HEADLESS", "").lower() == "true" or not os.getenv("DISPLAY", "") and os.name != "nt":
+            in_docker = os.path.exists("/.dockerenv") or os.getenv("PLAYWRIGHT_HEADLESS", "").lower() == "true"
+            if in_docker:
                 raise GoogleAuthError(
-                    f"Running headless — cannot open browser for re-auth.\n"
+                    f"Running in Docker — cannot open browser for re-auth.\n"
                     f"Fix: On your LOCAL machine run: python sheets_uploader.py\n"
                     f"Then copy the generated token.json to the server."
                 )

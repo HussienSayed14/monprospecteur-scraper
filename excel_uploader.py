@@ -20,6 +20,9 @@ Usage:
 
 from pathlib import Path
 from datetime import datetime
+import zoneinfo
+
+TORONTO_TZ = zoneinfo.ZoneInfo("America/Toronto")
 
 try:
     import openpyxl
@@ -111,9 +114,10 @@ def _next_ref_number(date: datetime = None) -> str: # type: ignore
     """
     Generate: JLR + YYYYMMDD + zero-padded 2-digit sequence per day.
     Example: JLR2025120601, JLR2025120602 ...
-    Counter resets each new calendar day.
+    Date is in Toronto timezone — counter resets each Toronto calendar day.
     """
-    d = (date or datetime.utcnow()).strftime("%Y%m%d")
+    toronto_now = datetime.now(TORONTO_TZ)
+    d = (date.astimezone(TORONTO_TZ) if date and hasattr(date, "tzinfo") and date.tzinfo else toronto_now).strftime("%Y%m%d")
     _ref_counter[d] = _ref_counter.get(d, 0) + 1
     return f"JLR{d}{_ref_counter[d]:02d}"
 
