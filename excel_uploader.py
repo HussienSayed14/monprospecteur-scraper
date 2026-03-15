@@ -127,8 +127,11 @@ def _next_ref_number() -> str:
 import re as _re
 
 def _format_postal_code(raw: str) -> str:
-    """Uppercase, no spaces: "H2B 2J3" or "h2b2j3" -> "H2B2J3" """
-    return raw.upper().replace(" ", "")
+    """Uppercase with space after 3rd char: "h2b2j3" or "H2B2J3" -> "H2B 2J3" """
+    clean = raw.upper().replace(" ", "")
+    if len(clean) == 6:
+        return f"{clean[:3]} {clean[3:]}"
+    return clean
 
 def _title_case_name(name: str) -> str:
     """
