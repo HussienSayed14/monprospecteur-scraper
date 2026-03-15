@@ -41,21 +41,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
 except ImportError:
     raise ImportError("Run: pip install google-auth google-auth-oauthlib google-api-python-client")
 
-# Needs both Drive and Sheets scopes in the same token
-SCOPES = [
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/spreadsheets",
-]
-
-CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
-TOKEN_FILE       = os.getenv("GOOGLE_TOKEN_FILE", "token.json")
+# Auth handled centrally — both scopes always together
+from google_auth import get_sheets_service as _auth_get_sheets_service, GoogleAuthError
 SHEET_ID         = os.getenv("GOOGLE_SHEET_ID", "")
 SHEET_TAB        = os.getenv("GOOGLE_SHEET_TAB", "Sheet1")
 
@@ -65,68 +56,9 @@ from excel_uploader import COLUMNS
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-class GoogleAuthError(Exception):
-    """Raised when Google auth fails and cannot be recovered automatically."""
-    pass
-
-
 def _get_sheets_service():
-    """
-    Authenticate and return a Sheets API service.
-
-    Flow:
-    1. token.json exists + valid + has all scopes → reuse silently
-    2. token.json exists + expired + has refresh_token → auto-refresh silently
-    3. token.json missing or corrupt or missing scopes → open browser for re-auth
-       (works locally; in Docker raises GoogleAuthError with clear instructions)
-    4. refresh fails → raise GoogleAuthError
-    """
-    creds = None
-
-    if Path(TOKEN_FILE).exists():
-        try:
-            creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-        except Exception:
-            # Corrupt file — delete and re-auth
-            print("  ⚠️  token.json is corrupt — will re-authenticate")
-            Path(TOKEN_FILE).unlink(missing_ok=True)
-            creds = None
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            # Try silent refresh first
-            try:
-                creds.refresh(Request())
-                Path(TOKEN_FILE).write_text(creds.to_json())
-                print("  🔄 Google token refreshed automatically")
-            except Exception as e:
-                raise GoogleAuthError(
-                    f"Token refresh failed: {e}\n"
-                    f"Fix: delete token.json and run: python sheets_uploader.py"
-                )
-        else:
-            # No token or missing scopes — need browser re-auth
-            if not Path(CREDENTIALS_FILE).exists():
-                raise GoogleAuthError(
-                    f"credentials.json not found at: {CREDENTIALS_FILE}\n"
-                    f"Download it from Google Cloud Console → APIs & Services → Credentials"
-                )
-            # Only block browser auth if explicitly running in Docker/headless
-            import os
-            in_docker = os.path.exists("/.dockerenv") or os.getenv("PLAYWRIGHT_HEADLESS", "").lower() == "true"
-            if in_docker:
-                raise GoogleAuthError(
-                    f"Running in Docker — cannot open browser for re-auth.\n"
-                    f"Fix: On your LOCAL machine run: python sheets_uploader.py\n"
-                    f"Then copy the generated token.json to the server."
-                )
-            print("  🔐 Opening browser for Google authentication...")
-            flow  = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
-            Path(TOKEN_FILE).write_text(creds.to_json())
-            print(f"  ✅ Authenticated — token saved to {TOKEN_FILE}")
-
-    return build("sheets", "v4", credentials=creds)
+    """Delegates to shared google_auth module — always uses both Drive+Sheets scopes."""
+    return _auth_get_sheets_service()
 
 
 # ── Sheet helpers ─────────────────────────────────────────────────────────────

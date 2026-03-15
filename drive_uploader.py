@@ -46,17 +46,13 @@ from pathlib import Path
 from datetime import datetime
 
 try:
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
+    from googleapiclient.discovery import build
 except ImportError:
     raise ImportError("Run: pip install google-auth google-auth-oauthlib google-api-python-client")
 
-SCOPES           = ["https://www.googleapis.com/auth/drive.file"]
-CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
-TOKEN_FILE       = os.getenv("GOOGLE_TOKEN_FILE", "token.json")
+# Auth is handled by google_auth.py — both Drive and Sheets scopes together
+from google_auth import get_drive_service, GoogleAuthError
 ROOT_FOLDER_ID   = os.getenv("DRIVE_ROOT_FOLDER_ID", "")
 
 # Lead type slug → folder name mapping (matches Lead Source values)
@@ -69,54 +65,8 @@ LEAD_TYPE_FOLDER = {
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-class GoogleAuthError(Exception):
-    """Raised when Google auth fails and cannot be recovered automatically."""
-    pass
-
-
 def _get_service():
-    creds = None
-
-    if Path(TOKEN_FILE).exists():
-        try:
-            creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-        except Exception:
-            print("  ⚠️  token.json is corrupt — will re-authenticate")
-            Path(TOKEN_FILE).unlink(missing_ok=True)
-            creds = None
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                Path(TOKEN_FILE).write_text(creds.to_json())
-                print("  🔄 Google token refreshed automatically")
-            except Exception as e:
-                raise GoogleAuthError(
-                    f"Token refresh failed: {e}\n"
-                    f"Fix: delete token.json and run: python sheets_uploader.py"
-                )
-        else:
-            if not Path(CREDENTIALS_FILE).exists():
-                raise GoogleAuthError(
-                    f"credentials.json not found at: {CREDENTIALS_FILE}\n"
-                    f"Download it from Google Cloud Console → APIs & Services → Credentials"
-                )
-            import os
-            in_docker = os.path.exists("/.dockerenv") or os.getenv("PLAYWRIGHT_HEADLESS", "").lower() == "true"
-            if in_docker:
-                raise GoogleAuthError(
-                    f"Running in Docker — cannot open browser for re-auth.\n"
-                    f"Fix: On your LOCAL machine run: python sheets_uploader.py\n"
-                    f"Then copy the generated token.json to the server."
-                )
-            print("  🔐 Opening browser for Google authentication...")
-            flow  = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
-            Path(TOKEN_FILE).write_text(creds.to_json())
-            print(f"  ✅ Authenticated — token saved to {TOKEN_FILE}")
-
-    return build("drive", "v3", credentials=creds)
+    return get_drive_service()
 
 
 # ── Folder helpers ────────────────────────────────────────────────────────────

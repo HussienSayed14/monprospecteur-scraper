@@ -22,6 +22,7 @@ COPY sheets_uploader.py .
 COPY email_sender.py .
 COPY run_history.py .
 COPY logger.py .
+COPY google_auth.py .
 
 # Output directories (volumes mounted over these at runtime)
 RUN mkdir -p output/pdfs output/prints output/data output/failed output/logs
