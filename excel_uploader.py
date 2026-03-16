@@ -283,15 +283,13 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
     first_name = _title_case_name(heir_person.get("firstName", ""))
     last_name  = _title_case_name(heir_person.get("lastName", ""))
 
-    # ── Mailing address — from owners[0] ─────────────────────────────
-    owners      = doc.get("owners", [])
-    first_owner = owners[0] if owners else {}
+    # ── Mailing address — from heir_person (Legataire) address ──────
+    # Same person as First/Last Name, same priority logic already resolved above
+    mailing_street_raw = heir_person.get("addressStreet", "")
+    mailing_city       = heir_person.get("addressCity", "")
+    mailing_zip        = _format_postal_code(heir_person.get("addressZipCode", ""))
 
-    owner_street_raw = first_owner.get("addressStreet", "")
-    owner_city       = first_owner.get("addressCity", "")
-    owner_zip        = _format_postal_code(first_owner.get("addressZipCode", ""))
-
-    m_unit, m_street_no_unit   = _parse_unit_from_street(owner_street_raw)
+    m_unit, m_street_no_unit    = _parse_unit_from_street(mailing_street_raw)
     m_street_num, m_street_name = _parse_street_number(m_street_no_unit)
 
     # ── Cadastre (lot number) ─────────────────────────────────────────
@@ -323,12 +321,12 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
         "Other State":         "Quebec",
         "Other Country":       "Canada",
 
-        # Mailing address — from owners[0]
+        # Mailing address — from Legataire (same person as First/Last Name)
         "Mailing Unit":          m_unit,
         "Mailing Street Number": m_street_num,
         "Mailing Street":        m_street_name,
-        "Mailing City":          owner_city,
-        "Mailing Zip":           owner_zip,
+        "Mailing City":          mailing_city,
+        "Mailing Zip":           mailing_zip,
         "Mailing State":         "Quebec",
         "Mailing Country":       "Canada",
 

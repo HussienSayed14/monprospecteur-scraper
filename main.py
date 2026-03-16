@@ -740,13 +740,25 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         # ── Get docs to process ────────────────────────────────────────
         log.step("Fetching documents from API")
         if test_mode:
-            log.info("TEST MODE — taking first 3 docs (read or unread)")
-            all_docs        = fetch_all_documents(req_session, log=log)
-            docs_to_process = all_docs[:3]
-            stats.total_fetched = len(all_docs)
-            stats.total_unread  = len(docs_to_process)
+            log.info("TEST MODE — taking up to 5 docs per lead type (read or unread)")
+            all_docs = fetch_all_documents(req_session, log=log)
             raw_path = DATA_DIR / "raw_documents.json"
             raw_path.write_text(json.dumps(all_docs, indent=2, ensure_ascii=False))
+
+            # Pick up to 5 from each type: Succession, Avis de 60 jours, Vente pour taxes
+            type_buckets = {}
+            for doc in all_docs:
+                t = doc.get("type", "Unknown")
+                if t not in type_buckets:
+                    type_buckets[t] = []
+                if len(type_buckets[t]) < 5:
+                    type_buckets[t].append(doc)
+
+            docs_to_process = [doc for bucket in type_buckets.values() for doc in bucket]
+            stats.total_fetched = len(all_docs)
+            stats.total_unread  = len(docs_to_process)
+            log.info(f"Test selection: {len(docs_to_process)} docs",
+                     breakdown=", ".join(f"{t}: {len(b)}" for t, b in type_buckets.items()))
 
         elif retry_mode:
             log.info("RETRY MODE — loading failed queue")
