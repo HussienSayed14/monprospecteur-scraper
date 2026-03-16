@@ -168,19 +168,32 @@ def _parse_unit_from_street(street: str) -> tuple[str, str]:
     """
     Extract unit prefix if present, return (unit, remaining_street).
     Handles:
-      "101-456 Rue Test"       -> ("101", "456 Rue Test")
-      "456 Rue Test, Apt 3"   -> ("3",   "456 Rue Test")
-      "6630, rue Test"         -> ("",    "6630, rue Test")  # comma is NOT a unit
+      "1110-1110a Chemin..."   -> unit="1110a",  street="1110 Chemin..."
+      "101-456 Rue Test"       -> unit="101",    street="456 Rue Test"
+      "456 Rue Test, Apt 3"   -> unit="3",       street="456 Rue Test"
+      "6630, rue Test"         -> unit="",        street="6630, rue Test"
     """
     s = street.strip()
-    # Pattern: leading "101-456 Rue..." (unit-streetnum format)
-    m = _re.match(r'^(\d+)-(\d+[\s,].*)', s)
+
+    # Pattern: "NUM-NUMa? Street" where second part starts with same digits + optional letter
+    # e.g. "1110-1110a Chemin" → street_num=1110, unit=1110a
+    m = _re.match(r'^(\d+)-(\d+[a-zA-Z]?)\s+(.*)', s)
     if m:
-        return m.group(1), m.group(2).strip()
+        first_num  = m.group(1)
+        second_num = m.group(2)
+        rest       = m.group(3).strip()
+        # If second part is just digits (different number) it's unit-streetnum format
+        if second_num.isdigit():
+            return first_num, f"{second_num} {rest}".strip()
+        else:
+            # second part has a letter suffix — it's a unit variant like "1110a"
+            return second_num, f"{first_num} {rest}".strip()
+
     # Pattern: suffix apt/suite/unit/# keyword
     m2 = _re.search(r'[\s,]+(apt|app|suite|unit|#)\s*(\w+)', s, _re.IGNORECASE)
     if m2:
         return m2.group(2), s[:m2.start()].strip()
+
     return "", s
 
 

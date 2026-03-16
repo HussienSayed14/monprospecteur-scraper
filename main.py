@@ -218,7 +218,7 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
                 print(f"  📧 Checking email dated: {date_str}")
 
                 try:
-                    email_time = email.utils.parsedate_to_datetime(date_str) # type: ignore
+                    email_time = email.utils.parsedate_to_datetime(date_str)# type: ignore
                     if email_time.tzinfo is None:
                         email_time = email_time.replace(tzinfo=timezone.utc)
                 except Exception:
@@ -398,14 +398,27 @@ def fetch_all_documents(session: requests.Session, log=None) -> list:
     return all_docs
 
 
+# Only these 3 types are processed — anything else is skipped
+ALLOWED_TYPES = {"Succession", "Avis de 60 jours", "Vente pour taxes"}
+
 def filter_unread(all_docs: list, stats: RunStats) -> list:
-    """Keep only docs where isRead == False."""
+    """Keep only docs where isRead == False AND type is one of the 3 allowed types."""
     stats.total_fetched = len(all_docs)
-    unread = [d for d in all_docs if not d.get("isRead", True)]
-    stats.total_unread = len(unread)
-    stats.total_skipped_read = len(all_docs) - len(unread)
-    print(f"\n🔍 Filter: {len(all_docs)} total → {len(unread)} unread, {stats.total_skipped_read} skipped (already read)")
-    return unread
+
+    skipped_read    = [d for d in all_docs if d.get("isRead", True)]
+    unread_all      = [d for d in all_docs if not d.get("isRead", True)]
+    skipped_type    = [d for d in unread_all if d.get("type") not in ALLOWED_TYPES]
+    qualified       = [d for d in unread_all if d.get("type") in ALLOWED_TYPES]
+
+    stats.total_unread       = len(qualified)
+    stats.total_skipped_read = len(skipped_read)
+
+    print(f"\n🔍 Filter results:")
+    print(f"   Total fetched  : {stats.total_fetched}")
+    print(f"   Skipped (read) : {len(skipped_read)}")
+    print(f"   Skipped (type) : {len(skipped_type)}  — types: {set(d.get('type') for d in skipped_type)}")
+    print(f"   ✅ Qualified   : {len(qualified)}")
+    return qualified
 
 
 # ─────────────────────────────────────────────
@@ -745,10 +758,12 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             raw_path = DATA_DIR / "raw_documents.json"
             raw_path.write_text(json.dumps(all_docs, indent=2, ensure_ascii=False))
 
-            # Pick up to 5 from each type: Succession, Avis de 60 jours, Vente pour taxes
+            # Pick up to 5 from each of the 3 allowed types only
             type_buckets = {}
             for doc in all_docs:
-                t = doc.get("type", "Unknown")
+                t = doc.get("type", "")
+                if t not in ALLOWED_TYPES:
+                    continue
                 if t not in type_buckets:
                     type_buckets[t] = []
                 if len(type_buckets[t]) < 5:
