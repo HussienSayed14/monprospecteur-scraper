@@ -128,6 +128,8 @@ import re as _re
 
 def _format_postal_code(raw: str) -> str:
     """Uppercase with space after 3rd char: "h2b2j3" or "H2B2J3" -> "H2B 2J3" """
+    if not raw:
+        return ""
     clean = raw.upper().replace(" ", "")
     if len(clean) == 6:
         return f"{clean[:3]} {clean[3:]}"
@@ -235,9 +237,9 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
         pub_date = datetime.utcnow()
 
     # ── Address parsing ───────────────────────────────────────────────
-    address_street  = doc.get("addressStreet", "")
-    address_city    = doc.get("addressCity", "")
-    address_zip_raw = doc.get("addressZipCode", "")
+    address_street  = doc.get("addressStreet") or ""
+    address_city    = doc.get("addressCity") or ""
+    address_zip_raw = doc.get("addressZipCode") or ""
     address_zip     = _format_postal_code(address_zip_raw)
 
     unit, street_without_unit = _parse_unit_from_street(address_street)
@@ -285,15 +287,15 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
 
     # ── Mailing address — from heir_person (Legataire) address ──────
     # Same person as First/Last Name, same priority logic already resolved above
-    mailing_street_raw = heir_person.get("addressStreet", "")
-    mailing_city       = heir_person.get("addressCity", "")
-    mailing_zip        = _format_postal_code(heir_person.get("addressZipCode", ""))
+    mailing_street_raw = heir_person.get("addressStreet") or ""
+    mailing_city       = heir_person.get("addressCity") or ""
+    mailing_zip        = _format_postal_code(heir_person.get("addressZipCode") or "")
 
     m_unit, m_street_no_unit    = _parse_unit_from_street(mailing_street_raw)
     m_street_num, m_street_name = _parse_street_number(m_street_no_unit)
 
     # ── Cadastre (lot number) ─────────────────────────────────────────
-    numero_lot = doc.get("cadastreNumber", "")
+    numero_lot = doc.get("cadastreNumber") or ""
 
     row = {
         # Fixed values
