@@ -1,0 +1,17 @@
+{
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.12",
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false,
+  "reportOptionalMemberAccess": false,
+  "reportOptionalSubscript": false,
+  "reportOptionalCall": false,
+  "reportOptionalIterable": false,
+  "reportIndexIssue": false,
+  "reportArgumentType": false,
+  "reportReturnType": false,
+  "reportAttributeAccessIssue": false,
+  "reportOperatorIssue": false,
+  "reportCallIssue": false,
+  "reportPossiblyUnbound": false
+}

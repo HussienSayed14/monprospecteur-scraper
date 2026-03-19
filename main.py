@@ -18,7 +18,7 @@ GMAIL_USER         = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 SITE_EMAIL         = os.getenv("SITE_EMAIL")
 SITE_PASSWORD      = os.getenv("SITE_PASSWORD")
-OTP_SUBJECT_PREFIX = "Forward SMS From:"  # sender domain changes (mailer1/2/3/4...) but subject is always consistent
+OTP_SUBJECT_PREFIX = "Forwarded SMS From:"  # sender domain changes (mailer1/2/3/4...) but subject is always consistent
 
 # Webshare proxy — set these in .env
 # Format: 82.23.96.252:7478  (host:port only, credentials separate)
@@ -196,11 +196,11 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
         time.sleep(wait)
         try:
             mail = imaplib.IMAP4_SSL("imap.gmail.com")
-            mail.login(GMAIL_USER, GMAIL_APP_PASSWORD) # type: ignore
+            mail.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             mail.select("inbox")
 
             # Search by subject — sender domain changes (mailer1/2/3/4)
-            # but subject always starts with "Forward SMS From:"
+            # but subject always starts with "Forwarded SMS From:"
             _, data = mail.search(None, f'(SUBJECT "{OTP_SUBJECT_PREFIX}")')
             ids = data[0].split()
             print(f"  📬 Found {len(ids)} email(s) with subject '{OTP_SUBJECT_PREFIX}'")
@@ -212,13 +212,13 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
             # Check most recent emails first
             for email_id in reversed(ids):
                 _, msg_data = mail.fetch(email_id, "(RFC822)")
-                msg = email.message_from_bytes(msg_data[0][1]) # type: ignore
+                msg = email.message_from_bytes(msg_data[0][1])
 
                 date_str = msg.get("Date")
                 print(f"  📧 Checking email dated: {date_str}")
 
                 try:
-                    email_time = email.utils.parsedate_to_datetime(date_str)# type: ignore
+                    email_time = email.utils.parsedate_to_datetime(date_str)
                     if email_time.tzinfo is None:
                         email_time = email_time.replace(tzinfo=timezone.utc)
                 except Exception:
@@ -233,18 +233,18 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
                             ct = part.get_content_type()
                             if ct == "text/plain":
                                 try:
-                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore") # type: ignore
+                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
                                     break
                                 except Exception:
                                     pass
                             elif ct == "text/html" and not body:
                                 try:
-                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore") # type: ignore
+                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
                                 except Exception:
                                     pass
                     else:
                         try:
-                            body = msg.get_payload(decode=True).decode("utf-8", errors="ignore") # type: ignore
+                            body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
                         except Exception:
                             body = str(msg.get_payload())
 
@@ -389,7 +389,7 @@ def fetch_all_documents(session: requests.Session, log=None) -> list:
             break
         page_num += 1
         t = random.uniform(3.0, 6.0)
-        log.info(f'Page {page_num} fetched — waiting {t:.1f}s before next page') # type: ignore
+        log.info(f'Page {page_num} fetched — waiting {t:.1f}s before next page')
         time.sleep(t)
 
     msg = f"Total documents fetched: {len(all_docs)}"
@@ -435,6 +435,35 @@ def fetch_document_details(doc_id: str, session: requests.Session) -> dict | Non
         return resp.json()
     print(f"    ❌ {resp.text[:300]}")
     return None
+
+
+def unlock_vpti_document(doc_id: str, act_id: str, session: requests.Session, log=None) -> dict | None:
+    """
+    VPTI leads may be locked — call the buy API to unlock and get full details.
+    POST/GET https://api.monprospecteur.com/documents/{doc_id}/{act_id}/buy
+    Returns the full unlocked detail response, or None on failure.
+    """
+    url = f"{API_BASE}/documents/{doc_id}/{act_id}/buy"
+    if log:
+        log.info("Unlocking VPTI document", url=url)
+    print(f"  → Unlocking VPTI: GET {url}")
+    try:
+        resp = session.get(url, timeout=30)
+        print(f"    Status: {resp.status_code}")
+        if resp.status_code == 200:
+            data = resp.json()
+            if log:
+                log.ok("VPTI document unlocked", doc=doc_id)
+            return data
+        print(f"    ❌ Unlock failed: {resp.text[:300]}")
+        if log:
+            log.error("VPTI unlock failed", status=resp.status_code, doc=doc_id)
+        return None
+    except Exception as e:
+        print(f"    ❌ Unlock error: {e}")
+        if log:
+            log.error("VPTI unlock error", error=str(e), doc=doc_id)
+        return None
 
 
 # ─────────────────────────────────────────────
@@ -618,15 +647,34 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
     failed_error = None
 
     # ── Detail API ────────────────────────────────────────────────────
-    if log: log.info("Fetching detail API", doc=doc_id)
+    doc_type   = doc.get("type", "")
+    is_vpti    = doc_type == "Vente pour taxes"
+    is_locked  = not doc.get("unlocked", True)
+
+    if log: log.info("Fetching detail API", doc=doc_id, type=doc_type, locked=is_locked)
     try:
         human_delay(1.0, 3.0)
-        detail = fetch_document_details(doc_id, req_session) # type: ignore
+
+        if is_vpti and is_locked:
+            # VPTI locked leads — must call buy API to unlock and get full data
+            log.info("VPTI lead is locked — calling unlock API", doc=doc_id) if log else None
+            unlocked_data = unlock_vpti_document(doc_id, act_id, req_session, log=log)
+            if unlocked_data:
+                # Buy API returns {"document": {...}, "user": {...}, ...}
+                # Extract just the document part
+                detail = unlocked_data.get("document", unlocked_data)
+            else:
+                # Fallback to regular detail API even if still locked
+                detail = fetch_document_details(doc_id, req_session)
+        else:
+            detail = fetch_document_details(doc_id, req_session)
+
         if detail is None:
             raise Exception("Empty response from detail API")
+
         detail_path = DATA_DIR / f"detail_{doc_id}.json"
         detail_path.write_text(json.dumps(detail, indent=2, ensure_ascii=False, default=str))
-        if log: log.ok("Detail API fetched", doc=doc_id)
+        if log: log.ok("Detail API fetched", doc=doc_id, unlocked=is_vpti and is_locked)
     except Exception as e:
         failed_step  = "detail_api"
         failed_error = e
@@ -638,7 +686,7 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
         if log: log.info("Downloading act PDF", doc=doc_id, act=act_id)
         try:
             human_delay(1.5, 4.0)
-            act_pdf = download_act_pdf(doc_id, act_id, req_session) # type: ignore
+            act_pdf = download_act_pdf(doc_id, act_id, req_session)
             if act_pdf is None:
                 raise Exception("act PDF download returned None")
             if log: log.ok("Act PDF saved", path=act_pdf)
@@ -653,7 +701,7 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
         if log: log.info("Rendering print PDF", doc=doc_id)
         try:
             human_delay(2.0, 4.0)
-            print_pdf = download_print_pdf(doc_id, page) # type: ignore
+            print_pdf = download_print_pdf(doc_id, page)
             if print_pdf is None:
                 raise Exception("print PDF returned None")
             if log: log.ok("Print PDF saved", path=print_pdf)
@@ -671,7 +719,7 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
         try:
             from run_history import record_scrape
             record_scrape(
-                doc_id      = doc_id, # type: ignore
+                doc_id      = doc_id,
                 address     = address,
                 lead_source = doc.get("type", ""),
                 run_id      = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S'),
@@ -721,7 +769,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         browser = p.chromium.launch(
             headless=headless,
             args=["--disable-blink-features=AutomationControlled"],
-            proxy=proxy_config, # type: ignore
+            proxy=proxy_config,
         )
         log.info("Browser launched", headless=headless)
 
@@ -815,10 +863,14 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             process_doc(doc, req_session, page, stats, failed_raw_docs, log=log)
 
             # ── Property history API ───────────────────────────────────
-            if doc_id and doc_id != "?":
+            # Skip for VPTI — requires Pro subscription which client doesn't have
+            if doc_id and doc_id != "?" and doc.get("type") != "Vente pour taxes":
                 human_delay(1.0, 2.0)
                 motivation = fetch_property_history(doc_id, req_session, log=log)
                 source_motivation_map[doc_id] = motivation
+            elif doc.get("type") == "Vente pour taxes":
+                source_motivation_map[doc_id] = ""
+                log.info("Skipping property history for VPTI lead", doc=doc_id) if log else None
 
             # ── Webhook call ───────────────────────────────────────────
             if WEBHOOK_URL:
@@ -876,7 +928,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             detail_path = DATA_DIR / f"detail_{doc_id}.json"
             detail_doc  = json.loads(detail_path.read_text()) if detail_path.exists() else None
             list_doc    = next((d for d in source_docs if d.get("_id") == doc_id), {})
-            row         = clean_lead(list_doc, detail_doc) # type: ignore
+            row         = clean_lead(list_doc, detail_doc)
 
             # Fill Source motivation from property_history API result
             row["Source motivation"] = source_motivation_map.get(doc_id, "")
@@ -937,7 +989,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
                 doc_id   = doc_id,
                 ok       = drive_ok,
                 url      = drive_url,
-                error    = drive_err, # type: ignore
+                error    = drive_err,
                 attempts = len(drive_log) + 1,
             )
 
@@ -1005,12 +1057,12 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         record_sheet_result(
             doc_ids = [s["id"] for s in stats.succeeded],
             ok      = sheet_ok,
-            error   = sheet_err, # type: ignore
+            error   = sheet_err,
         )
 
         # Record sheet result in stats
-        stats.upload_sheet_ok  = sheet_ok # type: ignore
-        stats.upload_sheet_log = sheet_log # type: ignore
+        stats.upload_sheet_ok  = sheet_ok
+        stats.upload_sheet_log = sheet_log
 
         # ── Save failed uploads queue for manual --retry-uploads ───────
         permanently_failed = [
@@ -1049,8 +1101,8 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         for r in stats.succeeded:
             r["drive_upload_ok"]  = r.get("drive_upload_ok", True)
             r["drive_upload_log"] = r.get("drive_upload_log", [])
-        stats.upload_sheet_ok  = getattr(stats, "upload_sheet_ok", True) # type: ignore
-        stats.upload_sheet_log = getattr(stats, "upload_sheet_log", []) # type: ignore
+        stats.upload_sheet_ok  = getattr(stats, "upload_sheet_ok", True)
+        stats.upload_sheet_log = getattr(stats, "upload_sheet_log", [])
 
         # Finish log and attach to email
         log.finish(
@@ -1062,7 +1114,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             stats_summary     = stats.summary,
             sheet_ok          = sheet_ok,
             sheet_log         = sheet_log,
-            excel_path        = excel_path if excel_rows else None, # type: ignore
+            excel_path        = excel_path if excel_rows else None,
             extra_attachments = [log.path],
         )
 

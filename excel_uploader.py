@@ -225,6 +225,26 @@ def _clean_price(raw_value: str) -> str:
     return v
 
 
+def _vpti_reference_number(creancier_person: dict, published: str = "") -> str:
+    """
+    VPTI reference number format: VPTI {YEAR} {person_name of Creancier}
+    Example: VPTI 2026 Municipalite Regionale De Comte De L'islet
+    """
+    try:
+        year = datetime.fromisoformat(published.replace("Z", "+00:00")).astimezone(TORONTO_TZ).year
+    except Exception:
+        year = datetime.now(TORONTO_TZ).year
+
+    person_name = (
+        creancier_person.get("person_name")
+        or creancier_person.get("lastName")
+        or creancier_person.get("name")
+        or ""
+    ).strip()
+
+    return f"VPTI {year} {person_name}" if person_name else f"VPTI {year}"
+
+
 # ── Data cleaning / mapping ───────────────────────────────────────────────────
 
 def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
@@ -263,63 +283,122 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
     price_raw     = _get_district_value(district_info, "Valeur de l'immeuble")
     price         = _clean_price(price_raw) if price_raw else ""
 
-    # ── Heir (First Name / Last Name) — from parties array ──────────
-    # Priority: Legataire > Debiteur > second party > first party
-    parties    = doc.get("parties", [])
-    # Also check inside acts array if parties is empty at top level
-    if not parties:
-        acts = doc.get("acts", [])
-        if acts:
-            parties = acts[0].get("parties", [])
+    # ── Lead type detection ──────────────────────────────────────────
+    is_vpti = doc_type == "Vente pour taxes"
 
-    heir_person = {}
-    if parties:
-        # Look for Legataire first, then Debiteur
+    # ── Parties array — check top level then inside acts ─────────────
+    parties = doc.get("parties") or []
+    if not parties:
+        acts = doc.get("acts") or []
+        if acts:
+            parties = acts[0].get("parties") or []
+
+    # ── Contact person logic ──────────────────────────────────────────
+    # Succession/60Days: Legataire > Debiteur > second party > first party
+    # VPTI:              Creancier (the municipality/creditor)
+    contact_person = {}
+    if is_vpti:
+        # For VPTI take Creancier — the entity owed taxes
+        for party in parties:
+            if party.get("name", "").strip().lower() == "creancier":
+                values = party.get("values") or []
+                if values:
+                    contact_person = values[0]
+                    break
+        # Fallback: first party
+        if not contact_person and parties:
+            values = parties[0].get("values") or []
+            if values:
+                contact_person = values[0]
+    else:
+        # Succession / 60Days: Legataire > Debiteur > second > first
         for target_name in ("Legataire", "Debiteur"):
             for party in parties:
                 if party.get("name", "").strip().lower() == target_name.lower():
-                    values = party.get("values", [])
+                    values = party.get("values") or []
                     if values:
-                        heir_person = values[0]
+                        contact_person = values[0]
                         break
-            if heir_person:
+            if contact_person:
                 break
-
-        # Fallback: second party first value, then first party first value
-        if not heir_person and len(parties) >= 2:
-            values = parties[1].get("values", [])
+        if not contact_person and len(parties) >= 2:
+            values = parties[1].get("values") or []
             if values:
-                heir_person = values[0]
-        if not heir_person and parties:
-            values = parties[0].get("values", [])
+                contact_person = values[0]
+        if not contact_person and parties:
+            values = parties[0].get("values") or []
             if values:
-                heir_person = values[0]
+                contact_person = values[0]
 
-    first_name = _title_case_name(heir_person.get("firstName", ""))
-    last_name  = _title_case_name(heir_person.get("lastName", ""))
+    # ── First / Last Name ────────────────────────────────────────────
+    # Succession/60Days: from contact_person (Legataire/Debiteur)
+    # VPTI: from owners[0] — if no owner, "NF"
+    owners = doc.get("owners") or []
 
-    # ── Mailing address — from heir_person (Legataire) address ──────
-    # Same person as First/Last Name, same priority logic already resolved above
-    mailing_street_raw = heir_person.get("addressStreet") or ""
-    mailing_city       = heir_person.get("addressCity") or ""
-    mailing_zip        = _format_postal_code(heir_person.get("addressZipCode") or "")
+    if is_vpti:
+        if owners:
+            first_owner = owners[0]
+            raw_first   = first_owner.get("firstName") or ""
+            raw_last    = first_owner.get("lastName")  or first_owner.get("name") or ""
+            # If firstName is empty but lastName has the full company name, put it all in Last Name
+            first_name = _title_case_name(raw_first) if raw_first else "NF"
+            last_name  = _title_case_name(raw_last)  if raw_last  else "NF"
+        else:
+            first_name = "NF"
+            last_name  = "NF"
+    else:
+        first_name = _title_case_name(contact_person.get("firstName") or "")
+        last_name  = _title_case_name(contact_person.get("lastName")  or "")
 
-    m_unit, m_street_no_unit    = _parse_unit_from_street(mailing_street_raw)
-    m_street_num, m_street_name = _parse_street_number(m_street_no_unit)
+    # ── Mailing address ───────────────────────────────────────────────
+    # Succession/60Days: from contact_person (Legataire)
+    # VPTI: from owners[0] — if no owners, blank + NF for state/country
+    if is_vpti:
+        if owners:
+            first_owner        = owners[0]
+            mailing_street_raw = first_owner.get("addressStreet") or ""
+            mailing_city       = first_owner.get("addressCity") or ""
+            mailing_zip        = _format_postal_code(first_owner.get("addressZipCode") or "")
+            m_unit, m_street_no_unit    = _parse_unit_from_street(mailing_street_raw)
+            m_street_num, m_street_name = _parse_street_number(m_street_no_unit)
+            mailing_state   = "Quebec"
+            mailing_country = "Canada"
+        else:
+            m_unit = m_street_num = m_street_name = ""
+            mailing_city = mailing_zip = ""
+            mailing_state = mailing_country = "NF"
+    else:
+        mailing_street_raw = contact_person.get("addressStreet") or ""
+        mailing_city       = contact_person.get("addressCity") or ""
+        mailing_zip        = _format_postal_code(contact_person.get("addressZipCode") or "")
+        m_unit, m_street_no_unit    = _parse_unit_from_street(mailing_street_raw)
+        m_street_num, m_street_name = _parse_street_number(m_street_no_unit)
+        mailing_state   = "Quebec"
+        mailing_country = "Canada"
 
     # ── Cadastre (lot number) ─────────────────────────────────────────
     numero_lot = doc.get("cadastreNumber") or ""
 
+    # ── Property type ─────────────────────────────────────────────────
+    # VPTI: dynamic from propertyType field
+    # Others: always "R-House"
+    if is_vpti:
+        type_propriete = doc.get("propertyType") or list_doc.get("propertyType") or "R-House"
+    else:
+        type_propriete = "R-House"
+
     row = {
         # Fixed values
         "Type":           "Prospect",
-        "Type Propriete": "R-House",
+        "Type Propriete": type_propriete,
 
         # Mapped from doc type
         "Lead Source":    LEAD_SOURCE_MAP.get(doc_type, doc_type),
 
-        # JLR + YYYYMMDD + 2-digit sequence  e.g. JLR2026031401
-        "Reference Number": _next_ref_number(),
+        # Reference Number:
+        # Succession/60Days: JLR + YYYYMMDD + 2-digit sequence e.g. JLR2026031401
+        # VPTI: VPTI {YEAR} {Creancier person_name}
+        "Reference Number": _vpti_reference_number(contact_person, published) if is_vpti else _next_ref_number(),
 
         # Municipal assessment price (cleaned integer string)
         "Price":          price,
@@ -336,16 +415,18 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
         "Other State":         "Quebec",
         "Other Country":       "Canada",
 
-        # Mailing address — from Legataire (same person as First/Last Name)
+        # Mailing address
+        # Succession/60Days: from Legataire | VPTI: from owners[0] or NF
         "Mailing Unit":          m_unit,
         "Mailing Street Number": m_street_num,
         "Mailing Street":        m_street_name,
         "Mailing City":          mailing_city,
         "Mailing Zip":           mailing_zip,
-        "Mailing State":         "Quebec",
-        "Mailing Country":       "Canada",
+        "Mailing State":         mailing_state,
+        "Mailing Country":       mailing_country,
 
-        # Heir name — Legataire > Debiteur > fallback
+        # Contact name
+        # Succession/60Days: Legataire | VPTI: Creancier
         "First Name":      first_name,
         "Last Name":       last_name,
 
@@ -432,7 +513,7 @@ def write_leads_to_excel(
         for row_data in rows:
             val = str(row_data.get(col_name, "") or "")
             if len(val) > max_len:
-                max_len = len(val)
+                max_len = len(val) 
         ws.column_dimensions[col_letter].width = min(max_len + 4, 50) # type: ignore
 
     wb.save(str(path))

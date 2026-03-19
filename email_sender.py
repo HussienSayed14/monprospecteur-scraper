@@ -268,7 +268,7 @@ def send_summary_email(
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(GMAIL_USER, GMAIL_APP_PASSWORD) # type: ignore
-            server.sendmail(GMAIL_USER, recipients, msg.as_string()) # type: ignore
+            server.sendmail(GMAIL_USER, recipients, msg.as_string())  # type: ignore
         print(f"  ✅ Email sent: {subject}")
     except Exception as e:
         print(f"  ❌ Email failed: {e}")

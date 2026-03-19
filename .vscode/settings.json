@@ -1,0 +1,19 @@
+{
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingImports": "none",
+    "reportMissingModuleSource": "none",
+    "reportOptionalMemberAccess": "none",
+    "reportOptionalSubscript": "none",
+    "reportOptionalCall": "none",
+    "reportOptionalIterable": "none",
+    "reportIndexIssue": "none",
+    "reportArgumentType": "none",
+    "reportReturnType": "none",
+    "reportAttributeAccessIssue": "none",
+    "reportOperatorIssue": "none",
+    "reportCallIssue": "none",
+    "reportPossiblyUnbound": "none"
+  },
+  "python.languageServer": "Pylance"
+}

@@ -112,7 +112,7 @@ def _update_values(service, range_: str, values: list[list]):
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def ensure_header_row(sheet_id: str = None, tab: str = None): # type: ignore
+def ensure_header_row(sheet_id: str = None, tab: str = None):
     """
     Verifies the sheet already has headers. Never writes or modifies them
     so your existing sheet formatting is fully preserved.
@@ -138,8 +138,8 @@ def ensure_header_row(sheet_id: str = None, tab: str = None): # type: ignore
 
 def append_rows_to_sheet(
     rows: list[dict],
-    sheet_id: str = None, # type: ignore
-    tab: str = None, # type: ignore
+    sheet_id: str = None,
+    tab: str = None,
 ) -> int:
     """
     Append lead rows to the Google Sheet.
@@ -173,7 +173,7 @@ def append_rows_to_sheet(
     return len(rows)
 
 
-def get_existing_reference_numbers(sheet_id: str = None, tab: str = None) -> set: # type: ignore
+def get_existing_reference_numbers(sheet_id: str = None, tab: str = None) -> set:
     """
     Read the Reference Number column from the sheet and return a set of all
     existing values. Useful for deduplication — skip leads already in the sheet.
