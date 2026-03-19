@@ -84,10 +84,10 @@ def record_scrape(
     address:    str,
     lead_source: str,
     run_id:     str,
-    act_pdf:    str = None, # type: ignore
-    print_pdf:  str = None, # type: ignore
+    act_pdf:    str = None,
+    print_pdf:  str = None,
     scrape_ok:  bool = True,
-    scrape_error: str = None, # type: ignore
+    scrape_error: str = None,
     reference_number: str = "",
 ) -> dict:
     """Call this as soon as a lead is scraped (before upload attempts)."""
@@ -117,7 +117,7 @@ def record_scrape(
     return entry
 
 
-def record_drive_result(doc_id: str, ok: bool, url: str = "", error: str = None, attempts: int = 1): # type: ignore
+def record_drive_result(doc_id: str, ok: bool, url: str = "", error: str = None, attempts: int = 1):
     """Call after Drive upload attempt(s) for a lead."""
     upsert_lead({
         "doc_id":        doc_id,
@@ -129,7 +129,7 @@ def record_drive_result(doc_id: str, ok: bool, url: str = "", error: str = None,
     })
 
 
-def record_sheet_result(doc_ids: list, ok: bool, error: str = None): # type: ignore
+def record_sheet_result(doc_ids: list, ok: bool, error: str = None):
     """Call after Sheet upload attempt. Applies to all doc_ids in the batch."""
     for doc_id in doc_ids:
         entry = {"doc_id": doc_id, "sheet_ok": ok, "sheet_error": error}
@@ -141,7 +141,7 @@ def record_sheet_result(doc_ids: list, ok: bool, error: str = None): # type: ign
         upsert_lead(entry)
 
 
-def record_excel_result(doc_ids: list, ok: bool, path: str = "", error: str = None): # type: ignore
+def record_excel_result(doc_ids: list, ok: bool, path: str = "", error: str = None):
     """Call after Excel write."""
     for doc_id in doc_ids:
         upsert_lead({"doc_id": doc_id, "excel_ok": ok, "excel_path": path, "excel_error": error})
@@ -153,7 +153,7 @@ def get_pending_retries() -> list:
     return [e for e in history if e.get("needs_retry")]
 
 
-def get_summary(run_id: str = None) -> dict: # type: ignore
+def get_summary(run_id: str = None) -> dict:
     """Return counts for a specific run or all runs."""
     history = _load()
     if run_id:
