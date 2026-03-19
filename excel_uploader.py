@@ -247,7 +247,7 @@ def _vpti_reference_number(creancier_person: dict, published: str = "") -> str:
 
 # ── Data cleaning / mapping ───────────────────────────────────────────────────
 
-def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
+def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict:
     """
     Map raw API data to the Excel column structure.
 
@@ -351,30 +351,45 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict: # type: ignore
         last_name  = _title_case_name(contact_person.get("lastName")  or "")
 
     # ── Mailing address ───────────────────────────────────────────────
-    # Succession/60Days: from contact_person (Legataire)
-    # VPTI: from owners[0] — if no owners, blank + NF for state/country
+    # VPTI:              from owners[0] — if no owner, all fields = "NF"
+    # Succession/60Days: from contact_person (Legataire) — if no address, all = "NF"
+    def _extract_mailing(person: dict) -> tuple:
+        """Extract and parse mailing address from a person dict.
+        Returns (unit, street_num, street_name, city, zip, has_data)."""
+        street_raw = person.get("addressStreet") or ""
+        city       = person.get("addressCity")   or ""
+        zip_code   = _format_postal_code(person.get("addressZipCode") or "")
+        unit, no_unit   = _parse_unit_from_street(street_raw)
+        num, name       = _parse_street_number(no_unit)
+        has_data = bool(street_raw or city or zip_code)
+        return unit, num, name, city, zip_code, has_data
+
+    def _nf_mailing():
+        """Return all mailing fields as NF."""
+        return "NF", "NF", "NF", "NF", "NF", "NF", "NF"
+
     if is_vpti:
-        if owners:
-            first_owner        = owners[0]
-            mailing_street_raw = first_owner.get("addressStreet") or ""
-            mailing_city       = first_owner.get("addressCity") or ""
-            mailing_zip        = _format_postal_code(first_owner.get("addressZipCode") or "")
-            m_unit, m_street_no_unit    = _parse_unit_from_street(mailing_street_raw)
-            m_street_num, m_street_name = _parse_street_number(m_street_no_unit)
+        # VPTI: mailing comes from owners[0]
+        # If no owners, or owner has no address data → all NF
+        owner = owners[0] if owners else None
+        if owner:
+            m_unit, m_street_num, m_street_name, mailing_city, mailing_zip, has_mailing = _extract_mailing(owner)
+            if has_mailing:
+                mailing_state   = "Quebec"
+                mailing_country = "Canada"
+            else:
+                m_unit, m_street_num, m_street_name, mailing_city, mailing_zip, mailing_state, mailing_country = _nf_mailing()
+        else:
+            m_unit, m_street_num, m_street_name, mailing_city, mailing_zip, mailing_state, mailing_country = _nf_mailing()
+    else:
+        # Succession/60Days: mailing comes from contact_person (Legataire)
+        # If no address data → all NF
+        m_unit, m_street_num, m_street_name, mailing_city, mailing_zip, has_mailing = _extract_mailing(contact_person)
+        if has_mailing:
             mailing_state   = "Quebec"
             mailing_country = "Canada"
         else:
-            m_unit = m_street_num = m_street_name = ""
-            mailing_city = mailing_zip = ""
-            mailing_state = mailing_country = "NF"
-    else:
-        mailing_street_raw = contact_person.get("addressStreet") or ""
-        mailing_city       = contact_person.get("addressCity") or ""
-        mailing_zip        = _format_postal_code(contact_person.get("addressZipCode") or "")
-        m_unit, m_street_no_unit    = _parse_unit_from_street(mailing_street_raw)
-        m_street_num, m_street_name = _parse_street_number(m_street_no_unit)
-        mailing_state   = "Quebec"
-        mailing_country = "Canada"
+            m_unit, m_street_num, m_street_name, mailing_city, mailing_zip, mailing_state, mailing_country = _nf_mailing()
 
     # ── Cadastre (lot number) ─────────────────────────────────────────
     numero_lot = doc.get("cadastreNumber") or ""
@@ -482,39 +497,39 @@ def write_leads_to_excel(
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = sheet_name # type: ignore
+    ws.title = sheet_name
 
     # ── Header row ────────────────────────────────────────────────────
-    ws.append(COLUMNS) # type: ignore
-    for cell in ws[1]: # type: ignore
+    ws.append(COLUMNS)
+    for cell in ws[1]:
         cell.fill      = HEADER_FILL
         cell.font      = HEADER_FONT
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border    = THIN_BORDER
-    ws.row_dimensions[1].height = 32 # type: ignore
-    ws.freeze_panes = "A2" # type: ignore
+    ws.row_dimensions[1].height = 32
+    ws.freeze_panes = "A2"
 
     # ── Data rows ─────────────────────────────────────────────────────
     for row_idx, row_data in enumerate(rows, start=2):
         row_values = [row_data.get(col, "") for col in COLUMNS]
-        ws.append(row_values) # type: ignore
+        ws.append(row_values)
 
         fill = EVEN_FILL if row_idx % 2 == 0 else ODD_FILL
-        for cell in ws[row_idx]: # type: ignore
+        for cell in ws[row_idx]:
             cell.fill      = fill
             cell.alignment = Alignment(vertical="center", wrap_text=False)
             cell.border    = THIN_BORDER
 
     # ── Column widths ─────────────────────────────────────────────────
     for col_idx, col_name in enumerate(COLUMNS, start=1):
-        col_letter = ws.cell(row=1, column=col_idx).column_letter # type: ignore
+        col_letter = ws.cell(row=1, column=col_idx).column_letter
         # Width = max of header length vs longest data value, capped at 50
         max_len = len(col_name)
         for row_data in rows:
             val = str(row_data.get(col_name, "") or "")
             if len(val) > max_len:
-                max_len = len(val) 
-        ws.column_dimensions[col_letter].width = min(max_len + 4, 50) # type: ignore
+                max_len = len(val)
+        ws.column_dimensions[col_letter].width = min(max_len + 4, 50)
 
     wb.save(str(path))
     size_kb = path.stat().st_size / 1024
@@ -538,12 +553,12 @@ def append_leads_to_excel(
     wb = openpyxl.load_workbook(str(path))
     ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
 
-    next_row = ws.max_row + 1 # type: ignore
+    next_row = ws.max_row + 1
     for row_idx, row_data in enumerate(rows, start=next_row):
         row_values = [row_data.get(col, "") for col in COLUMNS]
-        ws.append(row_values) # type: ignore
+        ws.append(row_values)
         fill = EVEN_FILL if row_idx % 2 == 0 else ODD_FILL
-        for cell in ws[row_idx]: # type: ignore
+        for cell in ws[row_idx]:
             cell.fill      = fill
             cell.alignment = Alignment(vertical="center")
             cell.border    = THIN_BORDER
