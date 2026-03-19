@@ -51,14 +51,14 @@ def _load() -> list:
     if not HISTORY_FILE.exists():
         return []
     try:
-        return json.loads(HISTORY_FILE.read_text())
+        return json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
     except Exception:
         return []
 
 
 def _save(history: list):
     HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    HISTORY_FILE.write_text(json.dumps(history, indent=2, ensure_ascii=False, default=str))
+    HISTORY_FILE.write_text(json.dumps(history, indent=2, ensure_ascii=False, default=str, encoding="utf-8"))
 
 
 def upsert_lead(entry: dict):

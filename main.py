@@ -577,14 +577,14 @@ FAILED_UPLOADS_QUEUE_PATH = FAILED_DIR / "failed_uploads_queue.json"
 def save_failed_queue(failed_docs: list):
     """Save raw doc objects that failed so a retry run can pick them up."""
     FAILED_QUEUE_PATH.write_text(
-        json.dumps(failed_docs, indent=2, ensure_ascii=False, default=str)
+        json.dumps(failed_docs, indent=2, ensure_ascii=False, default=str, encoding="utf-8")
     )
     print(f"\n💾 Failed queue saved → {FAILED_QUEUE_PATH}  ({len(failed_docs)} items)")
 
 def load_failed_queue() -> list:
     if not FAILED_QUEUE_PATH.exists():
         return []
-    docs = json.loads(FAILED_QUEUE_PATH.read_text())
+    docs = json.loads(FAILED_QUEUE_PATH.read_text(encoding="utf-8"))
     print(f"📂 Loaded {len(docs)} docs from failed queue → {FAILED_QUEUE_PATH}")
     return docs
 
@@ -603,14 +603,14 @@ def clear_failed_queue():
 def save_failed_uploads(failed_rows: list):
     """Save rows that failed upload so they can be retried with --retry-uploads."""
     FAILED_UPLOADS_QUEUE_PATH.write_text(
-        json.dumps(failed_rows, indent=2, ensure_ascii=False, default=str)
+        json.dumps(failed_rows, indent=2, ensure_ascii=False, default=str, encoding="utf-8")
     )
     print(f"\n💾 Failed uploads queue saved → {FAILED_UPLOADS_QUEUE_PATH}  ({len(failed_rows)} items)")
 
 def load_failed_uploads() -> list:
     if not FAILED_UPLOADS_QUEUE_PATH.exists():
         return []
-    rows = json.loads(FAILED_UPLOADS_QUEUE_PATH.read_text())
+    rows = json.loads(FAILED_UPLOADS_QUEUE_PATH.read_text(encoding="utf-8"))
     print(f"📂 Loaded {len(rows)} failed upload rows → {FAILED_UPLOADS_QUEUE_PATH}")
     return rows
 
@@ -676,7 +676,7 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
             raise Exception("Empty response from detail API")
 
         detail_path = DATA_DIR / f"detail_{doc_id}.json"
-        detail_path.write_text(json.dumps(detail, indent=2, ensure_ascii=False, default=str))
+        detail_path.write_text(json.dumps(detail, indent=2, ensure_ascii=False, default=str, encoding="utf-8"))
         if log: log.ok("Detail API response saved",
                         doc=doc_id,
                         address=detail.get("address") or detail.get("shortAddress") or "N/A",
@@ -806,7 +806,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             login(page, context)
             log.ok("Login successful — session saved")
 
-        storage_state = json.loads(Path(SESSION_FILE).read_text())
+        storage_state = json.loads(Path(SESSION_FILE).read_text(encoding="utf-8"))
         req_session   = build_requests_session(storage_state)
 
         # ── Get docs to process ────────────────────────────────────────
@@ -815,7 +815,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             log.info("TEST MODE — taking up to 5 docs per lead type (read or unread)")
             all_docs = fetch_all_documents(req_session, log=log)
             raw_path = DATA_DIR / "raw_documents.json"
-            raw_path.write_text(json.dumps(all_docs, indent=2, ensure_ascii=False))
+            raw_path.write_text(json.dumps(all_docs, indent=2, ensure_ascii=False, encoding="utf-8"))
 
             # Pick up to 5 from each of the 3 allowed types only
             type_buckets = {}
@@ -849,7 +849,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             all_docs        = fetch_all_documents(req_session, log=log)
             docs_to_process = filter_unread(all_docs, stats)
             raw_path = DATA_DIR / "raw_documents.json"
-            raw_path.write_text(json.dumps(all_docs, indent=2, ensure_ascii=False))
+            raw_path.write_text(json.dumps(all_docs, indent=2, ensure_ascii=False, encoding="utf-8"))
 
         log.ok(f"Documents ready", total=len(all_docs), to_process=len(docs_to_process))
 
@@ -907,7 +907,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         # ── Save full run stats ────────────────────────────────────────
         stats.run_finished_at = datetime.now(timezone.utc)
         stats_path = DATA_DIR / f"run_stats_{stats.run_started_at.strftime('%Y%m%d_%H%M%S')}.json"
-        stats_path.write_text(json.dumps(stats.summary, indent=2, ensure_ascii=False))
+        stats_path.write_text(json.dumps(stats.summary, indent=2, ensure_ascii=False, encoding="utf-8"))
         print(f"\n💾 Run stats → {stats_path}")
 
         stats.print_summary()
@@ -943,7 +943,7 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             log.step(f"Upload pipeline for: {address}", doc=doc_id)
 
             detail_path = DATA_DIR / f"detail_{doc_id}.json"
-            detail_doc  = json.loads(detail_path.read_text()) if detail_path.exists() else None
+            detail_doc  = json.loads(detail_path.read_text(encoding="utf-8")) if detail_path.exists() else None
             list_doc    = next((d for d in source_docs if d.get("_id") == doc_id), {})
 
             log.info("Cleaning and mapping lead data", doc=doc_id)

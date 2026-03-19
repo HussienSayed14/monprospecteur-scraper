@@ -60,7 +60,7 @@ def get_credentials():
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
-                Path(TOKEN_FILE).write_text(creds.to_json())
+                Path(TOKEN_FILE).write_text(creds.to_json(), encoding="utf-8")
                 print("  🔄 Google token refreshed automatically")
             except Exception as e:
                 # Refresh failed — need full re-auth
@@ -87,7 +87,7 @@ def get_credentials():
         print("  🔐 Opening browser for Google authentication...")
         flow  = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
         creds = flow.run_local_server(port=0)
-        Path(TOKEN_FILE).write_text(creds.to_json())
+        Path(TOKEN_FILE).write_text(creds.to_json(), encoding="utf-8")
         print(f"  ✅ Authenticated — token saved to {TOKEN_FILE}")
         print(f"  ✅ Scopes: {creds.scopes}")
 

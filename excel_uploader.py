@@ -364,8 +364,19 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict:
             first_name = "NF"
             last_name  = "NF"
     else:
-        first_name = _title_case_name(contact_person.get("firstName") or "")
-        last_name  = _title_case_name(contact_person.get("lastName")  or "")
+        raw_first = (contact_person.get("firstName") or "").strip()
+        raw_last  = (contact_person.get("lastName")  or "").strip()
+        if raw_first:
+            first_name = _title_case_name(raw_first)
+            last_name  = _title_case_name(raw_last) if raw_last else ""
+        elif raw_last:
+            # Only last name present — split on first space
+            parts = raw_last.split(" ", 1)
+            first_name = _title_case_name(parts[0])
+            last_name  = _title_case_name(parts[1]) if len(parts) > 1 else ""
+        else:
+            first_name = ""
+            last_name  = ""
 
     # ── Mailing address ───────────────────────────────────────────────
     # VPTI:              from owners[0] — if no owner, all fields = "NF"

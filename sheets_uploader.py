@@ -79,18 +79,19 @@ def _get_last_row(service, tab: str) -> int:
         range=f"{tab}!A:A",
     ).execute()
     rows = result.get("values", [])
-    return len(rows)  # e.g. 50 if 50 rows including header
+    return len(rows)
 
 
 def _append_values(service, values: list[list]):
     """
     Append rows after the last existing row.
-    By anchoring to the row AFTER the last data row (not A1),
-    Sheets won't copy the header formatting onto new rows.
+    Uses update() anchored at the exact next empty row to avoid
+    inheriting header formatting (which happens with append() at A1).
     """
-    last_row  = _get_last_row(service, SHEET_TAB)
-    next_row  = last_row + 1
+    last_row    = _get_last_row(service, SHEET_TAB)
+    next_row    = last_row + 1
     start_range = f"{SHEET_TAB}!A{next_row}"
+    print(f"  📋 Sheet has {last_row} rows — appending at row {next_row}")
 
     service.spreadsheets().values().update(
         spreadsheetId=SHEET_ID,
