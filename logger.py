@@ -25,7 +25,7 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class RunLogger:
-    def __init__(self, run_id: str = None): # type: ignore
+    def __init__(self, run_id: str = None):
         self.run_id   = run_id or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.log_path = LOGS_DIR / f"run_{self.run_id}.log"
         self._entries = []
