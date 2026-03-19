@@ -58,7 +58,7 @@ def _load() -> list:
 
 def _save(history: list):
     HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    HISTORY_FILE.write_text(json.dumps(history, indent=2, ensure_ascii=False, default=str, encoding="utf-8"))
+    HISTORY_FILE.write_text(json.dumps(history, indent=2, ensure_ascii=False, default=str))
 
 
 def upsert_lead(entry: dict):
