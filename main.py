@@ -18,7 +18,7 @@ GMAIL_USER         = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 SITE_EMAIL         = os.getenv("SITE_EMAIL")
 SITE_PASSWORD      = os.getenv("SITE_PASSWORD")
-OTP_SUBJECT_PREFIX = "Forward SMS From:"  # sender domain changes (mailer1/2/3/4...) but subject is always consistent
+OTP_SUBJECT_PREFIX = "Forwarded SMS From:"  # sender domain changes (mailer1/2/3/4...) but subject is always consistent
 
 # Webshare proxy — set these in .env
 # Format: 82.23.96.252:7478  (host:port only, credentials separate)
@@ -200,7 +200,7 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
             mail.select("inbox")
 
             # Search by subject — sender domain changes (mailer1/2/3/4)
-            # but subject always starts with "Forward SMS From:"
+            # but subject always starts with "Forwarded SMS From:"
             _, data = mail.search(None, f'(SUBJECT "{OTP_SUBJECT_PREFIX}")')
             ids = data[0].split()
             print(f"  📬 Found {len(ids)} email(s) with subject '{OTP_SUBJECT_PREFIX}'")
@@ -624,49 +624,49 @@ def clear_failed_uploads():
 def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: dict, log=None):
     """
     For one unread document:
-      1. Fetch detail API
+      1. Fetch detail API (unlock first if VPTI locked)
       2. Download act PDF
       3. Download print PDF
-    Records success or failure into stats.
-    Returns (detail, act_pdf_path, print_pdf_path) — None on failure.
     """
-    doc_id  = doc.get("_id")
-    act_id  = doc.get("act")
-    address = doc.get("address", "N/A")
+    doc_id   = doc.get("_id")
+    act_id   = doc.get("act")
+    address  = doc.get("address") or "N/A"
+    doc_type = doc.get("type", "")
+    is_vpti  = doc_type == "Vente pour taxes"
+    is_locked = not doc.get("unlocked", True)
 
-    print(f"\n{'─' * 60}")
-    print(f"📄 {address}")
-    print(f"   _id : {doc_id}")
-    print(f"   act : {act_id}")
-    print(f"{'─' * 60}")
+    print(f"\n{chr(9472) * 60}")
+    print(f"\U0001f4c4 {address}")
+    print(f"   _id    : {doc_id}")
+    print(f"   act    : {act_id}")
+    print(f"   type   : {doc_type}  locked={is_locked}")
+    print(f"{chr(9472) * 60}")
+
+    if log:
+        log.step(f"Processing lead: {address}",
+                 id=doc_id, type=doc_type, locked=str(is_locked))
 
     detail    = None
     act_pdf   = None
     print_pdf = None
-    failed_step = None
+    failed_step  = None
     failed_error = None
 
-    # ── Detail API ────────────────────────────────────────────────────
-    doc_type   = doc.get("type", "")
-    is_vpti    = doc_type == "Vente pour taxes"
-    is_locked  = not doc.get("unlocked", True)
-
-    if log: log.info("Fetching detail API", doc=doc_id, type=doc_type, locked=is_locked)
+    # Step 1 — Detail API
+    if log: log.info("Step 1/3 — Fetching detail API", doc=doc_id)
     try:
         human_delay(1.0, 3.0)
-
         if is_vpti and is_locked:
-            # VPTI locked leads — must call buy API to unlock and get full data
-            log.info("VPTI lead is locked — calling unlock API", doc=doc_id) if log else None
+            if log: log.info("VPTI lead is locked — calling unlock/buy API", doc=doc_id, act=act_id)
             unlocked_data = unlock_vpti_document(doc_id, act_id, req_session, log=log)
             if unlocked_data:
-                # Buy API returns {"document": {...}, "user": {...}, ...}
-                # Extract just the document part
                 detail = unlocked_data.get("document", unlocked_data)
+                if log: log.ok("VPTI unlocked successfully", doc=doc_id)
             else:
-                # Fallback to regular detail API even if still locked
+                if log: log.warn("Unlock failed — falling back to regular detail API", doc=doc_id)
                 detail = fetch_document_details(doc_id, req_session)
         else:
+            if log: log.info("Calling regular detail API", doc=doc_id)
             detail = fetch_document_details(doc_id, req_session)
 
         if detail is None:
@@ -674,56 +674,62 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
 
         detail_path = DATA_DIR / f"detail_{doc_id}.json"
         detail_path.write_text(json.dumps(detail, indent=2, ensure_ascii=False, default=str))
-        if log: log.ok("Detail API fetched", doc=doc_id, unlocked=is_vpti and is_locked)
+        if log: log.ok("Detail API response saved",
+                        doc=doc_id,
+                        address=detail.get("address") or detail.get("shortAddress") or "N/A",
+                        owners=len(detail.get("owners") or []))
     except Exception as e:
         failed_step  = "detail_api"
         failed_error = e
-        print(f"  ❌ Detail API failed: {e}")
-        if log: log.error("Detail API failed", error=str(e), doc=doc_id)
+        print(f"  \u274c Detail API failed: {e}")
+        if log: log.error("Step 1/3 FAILED — detail API", error=str(e), doc=doc_id)
 
-    # ── Act PDF ───────────────────────────────────────────────────────
+    # Step 2 — Act PDF
     if not failed_step:
-        if log: log.info("Downloading act PDF", doc=doc_id, act=act_id)
+        if log: log.info("Step 2/3 — Downloading act PDF", doc=doc_id, act_id=act_id)
         try:
             human_delay(1.5, 4.0)
             act_pdf = download_act_pdf(doc_id, act_id, req_session)
             if act_pdf is None:
                 raise Exception("act PDF download returned None")
-            if log: log.ok("Act PDF saved", path=act_pdf)
+            size_kb = round(Path(act_pdf).stat().st_size / 1024, 1)
+            if log: log.ok("Act PDF downloaded", path=act_pdf, size_kb=str(size_kb) + "KB")
         except Exception as e:
             failed_step  = "act_pdf"
             failed_error = e
-            print(f"  ❌ Act PDF failed: {e}")
-            if log: log.error("Act PDF failed", error=str(e), doc=doc_id)
+            print(f"  \u274c Act PDF failed: {e}")
+            if log: log.error("Step 2/3 FAILED — act PDF", error=str(e), doc=doc_id)
 
-    # ── Print PDF ─────────────────────────────────────────────────────
+    # Step 3 — Print PDF
     if not failed_step:
-        if log: log.info("Rendering print PDF", doc=doc_id)
+        print_url = f"https://app.monprospecteur.com/app.html#/propriete/{doc_id}/print"
+        if log: log.info("Step 3/3 — Rendering print PDF", url=print_url)
         try:
             human_delay(2.0, 4.0)
             print_pdf = download_print_pdf(doc_id, page)
             if print_pdf is None:
                 raise Exception("print PDF returned None")
-            if log: log.ok("Print PDF saved", path=print_pdf)
+            size_kb = round(Path(print_pdf).stat().st_size / 1024, 1)
+            if log: log.ok("Print PDF rendered", path=print_pdf, size_kb=str(size_kb) + "KB")
         except Exception as e:
             failed_step  = "print_pdf"
             failed_error = e
-            print(f"  ❌ Print PDF failed: {e}")
-            if log: log.error("Print PDF failed", error=str(e), doc=doc_id)
+            print(f"  \u274c Print PDF failed: {e}")
+            if log: log.error("Step 3/3 FAILED — print PDF", error=str(e), doc=doc_id)
 
-    # ── Record result ─────────────────────────────────────────────────
+    # Record result
     if failed_step:
         stats.record_failure(doc_id, address, failed_step, failed_error)
         raw_docs_by_id[doc_id] = doc
-        # Record failed scrape in history
+        if log: log.error(f"Lead FAILED at step: {failed_step}", address=address, doc=doc_id)
         try:
             from run_history import record_scrape
             record_scrape(
-                doc_id      = doc_id,
-                address     = address,
-                lead_source = doc.get("type", ""),
-                run_id      = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S'),
-                scrape_ok   = False,
+                doc_id       = doc_id,
+                address      = address,
+                lead_source  = doc_type,
+                run_id       = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
+                scrape_ok    = False,
                 scrape_error = f"{failed_step}: {failed_error}",
             )
         except Exception:
@@ -731,7 +737,9 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
         return None, None, None
     else:
         stats.record_success(doc_id, address, act_pdf, print_pdf)
-        print(f"\n  ✅ Done: act={act_pdf}  print={print_pdf}")
+        if log: log.ok("Lead completed successfully",
+                        address=address, act_pdf=act_pdf, print_pdf=print_pdf)
+        print(f"\n  \u2705 Done — act={act_pdf}  print={print_pdf}")
         return detail, act_pdf, print_pdf
 
 
@@ -909,11 +917,15 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         from run_history     import record_scrape, record_drive_result, record_sheet_result, record_excel_result
 
         if test_mode:
-            print("\n🧪 TEST MODE — running full pipeline on 3 docs")
+            print("\n🧪 TEST MODE — running full pipeline")
+
+        log.step("Starting upload pipeline",
+                 leads=len(stats.succeeded),
+                 failed_scrapes=len(stats.failed))
 
         run_id = stats.run_started_at.strftime('%Y%m%d_%H%M%S')
         UPLOAD_MAX_RETRIES = 5
-        UPLOAD_RETRY_WAIT  = 5  # seconds between upload retries
+        UPLOAD_RETRY_WAIT  = 5
 
         excel_rows  = []
         excel_path  = str(DATA_DIR / f"leads_{stats.run_started_at.strftime('%Y%m%d_%H%M%S')}.xlsx")
@@ -925,14 +937,26 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             act_pdf   = result.get("act_pdf")
             print_pdf = result.get("print_pdf")
 
+            log.step(f"Upload pipeline for: {address}", doc=doc_id)
+
             detail_path = DATA_DIR / f"detail_{doc_id}.json"
             detail_doc  = json.loads(detail_path.read_text()) if detail_path.exists() else None
             list_doc    = next((d for d in source_docs if d.get("_id") == doc_id), {})
-            row         = clean_lead(list_doc, detail_doc)
 
-            # Fill Source motivation from property_history API result
-            row["Source motivation"] = source_motivation_map.get(doc_id, "")
-            log.info("Source motivation set", value=row["Source motivation"], doc=doc_id)
+            log.info("Cleaning and mapping lead data", doc=doc_id)
+            row = clean_lead(list_doc, detail_doc)
+            log.ok("Lead data mapped",
+                   reference=row.get("Reference Number", "N/A"),
+                   first_name=row.get("First Name", ""),
+                   last_name=row.get("Last Name", ""),
+                   address_city=row.get("Other City", ""),
+                   price=row.get("Price", ""),
+                   lead_source=row.get("Lead Source", ""))
+
+            # Source motivation
+            motivation = source_motivation_map.get(doc_id, "")
+            row["Source motivation"] = motivation
+            log.info("Source motivation", value=motivation or "(none)", doc=doc_id)
 
             # Record scrape in history (drive/sheet pending at this point)
             record_scrape(
@@ -1001,21 +1025,25 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             excel_rows.append(row)
 
         # ── Write Excel ────────────────────────────────────────────────
+        log.step("Writing Excel file", rows=len(excel_rows), path=excel_path)
         excel_ok = False
         if excel_rows:
             try:
                 write_leads_to_excel(excel_rows, excel_path)
                 excel_ok = True
+                log.ok("Excel file written", path=excel_path, rows=len(excel_rows))
                 record_excel_result([r.get("Reference Number","") and next(
                     (s["id"] for s in stats.succeeded if s.get("drive_url","") == r.get("Google Drive","")), ""
                 ) for r in excel_rows], ok=True, path=excel_path)
             except Exception as e:
+                log.error("Excel write failed", error=str(e))
                 print(f"  ❌ Excel write failed: {e}")
                 record_excel_result(
                     [s["id"] for s in stats.succeeded], ok=False, error=str(e)
                 )
 
         # ── Append to Google Sheet with in-run retries ─────────────────
+        log.step("Uploading to Google Sheet", rows=len(excel_rows))
         sheet_ok  = False
         sheet_log = []
         sheet_err = None
@@ -1023,10 +1051,13 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
         if excel_rows:
             try:
                 ensure_header_row()
+                log.info("Google Sheet header verified")
             except SheetAuthError as e:
                 sheet_err = str(e)
                 sheet_log.append(f"❌ Auth error: {e}")
+                log.error("Sheet auth error — stopping", error=str(e))
                 print(f"  ❌ Sheet auth error: {e}")
+
 
             if not sheet_err:
                 for attempt in range(1, UPLOAD_MAX_RETRIES + 1):
