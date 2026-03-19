@@ -73,10 +73,39 @@ def _get_sheet_values(service, range_: str) -> list:
 
 
 def _get_last_row(service, tab: str) -> int:
-    """Return the index of the last row that has data (1-based)."""
-    result = service.spreadsheets().values().get(
+    """
+    Return the index of the last row that has ANY data across ALL columns.
+    Uses spreadsheet metadata to get the actual last row reliably,
+    regardless of whether column A is empty.
+    """
+    result = service.spreadsheets().get(
+        spreadsheetId=SHEET_ID,
+        ranges=[f"{tab}"],
+        includeGridData=False,
+    ).execute()
+
+    # Find the sheet by tab name
+    for sheet in result.get("sheets", []):
+        props = sheet.get("properties", {})
+        if props.get("title") == tab:
+            return props.get("gridProperties", {}).get("rowCount", 1)
+
+    # Fallback: count non-empty rows in column A
+    result2 = service.spreadsheets().values().get(
         spreadsheetId=SHEET_ID,
         range=f"{tab}!A:A",
+    ).execute()
+    return len(result2.get("values", []))
+
+
+def _get_last_data_row(service, tab: str) -> int:
+    """
+    Return the last row that actually contains data (not just allocated rows).
+    Scans all columns to find the true last populated row.
+    """
+    result = service.spreadsheets().values().get(
+        spreadsheetId=SHEET_ID,
+        range=f"{tab}",
     ).execute()
     rows = result.get("values", [])
     return len(rows)
@@ -84,14 +113,13 @@ def _get_last_row(service, tab: str) -> int:
 
 def _append_values(service, values: list[list]):
     """
-    Append rows after the last existing row.
-    Uses update() anchored at the exact next empty row to avoid
-    inheriting header formatting (which happens with append() at A1).
+    Append rows after the last row that has actual data.
+    Scans the full sheet range so empty column A doesn't cause wrong positioning.
     """
-    last_row    = _get_last_row(service, SHEET_TAB)
+    last_row    = _get_last_data_row(service, SHEET_TAB)
     next_row    = last_row + 1
     start_range = f"{SHEET_TAB}!A{next_row}"
-    print(f"  📋 Sheet has {last_row} rows — appending at row {next_row}")
+    print(f"  📋 Sheet has {last_row} data rows — appending at row {next_row}")
 
     service.spreadsheets().values().update(
         spreadsheetId=SHEET_ID,
