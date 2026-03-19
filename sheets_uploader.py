@@ -164,9 +164,16 @@ def append_rows_to_sheet(
     service = _get_sheets_service()
 
     # Convert dicts to ordered lists matching COLUMNS
+    # Ensure all values are proper unicode strings (handles accented chars)
     values = []
     for row_data in rows:
-        values.append([str(row_data.get(col, "") or "") for col in COLUMNS])
+        row_values = []
+        for col in COLUMNS:
+            val = row_data.get(col, "") or ""
+            if isinstance(val, bytes):
+                val = val.decode("utf-8", errors="replace")
+            row_values.append(str(val))
+        values.append(row_values)
 
     _append_values(service, values)
     print(f"  ✅ Appended {len(rows)} row(s) to Google Sheet '{tab}'")

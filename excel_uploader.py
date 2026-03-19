@@ -137,17 +137,22 @@ def _format_postal_code(raw: str) -> str:
 
 def _title_case_name(name: str) -> str:
     """
-    Clean name capitalisation: "BEAUPRÉ, CHANTAL" or "beaupre, chantal"
-    -> "Beaupré, Chantal"
-    Works with accented characters.
+    Clean name capitalisation preserving accented characters (UTF-8).
+    "BEAUPRÉ, CHANTAL" -> "Beaupré, Chantal"
+    "MUNICIPALITE REGIONALE" -> "Municipalite Regionale"
+    Uses str.title() which handles unicode/accents correctly in Python 3.
     """
     if not name:
         return ""
+    # Ensure we are working with a proper unicode string
+    if isinstance(name, bytes):
+        name = name.decode("utf-8", errors="replace")
+    name = name.strip()
     # Handle "LastName, FirstName" format
     if "," in name:
         parts = name.split(",", 1)
         return ", ".join(p.strip().title() for p in parts)
-    return name.strip().title()
+    return name.title()
 
 def _parse_street_number(street: str) -> tuple[str, str]:
     """
@@ -338,11 +343,23 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict:
     if is_vpti:
         if owners:
             first_owner = owners[0]
-            raw_first   = first_owner.get("firstName") or ""
-            raw_last    = first_owner.get("lastName")  or first_owner.get("name") or ""
-            # If firstName is empty but lastName has the full company name, put it all in Last Name
-            first_name = _title_case_name(raw_first) if raw_first else "NF"
-            last_name  = _title_case_name(raw_last)  if raw_last  else "NF"
+            raw_first   = (first_owner.get("firstName") or "").strip()
+            raw_last    = (first_owner.get("lastName")  or first_owner.get("name") or "").strip()
+
+            if raw_first:
+                # Both first and last name present — use as is
+                first_name = _title_case_name(raw_first)
+                last_name  = _title_case_name(raw_last) if raw_last else "NF"
+            elif raw_last:
+                # Only a full name string (company or person) — split on first space
+                # e.g. "10316555 Canada Inc." -> first="10316555", last="Canada Inc."
+                # e.g. "Municipalite Regionale De Comte" -> first="Municipalite", last="Regionale De Comte"
+                parts = raw_last.split(" ", 1)
+                first_name = _title_case_name(parts[0])
+                last_name  = _title_case_name(parts[1]) if len(parts) > 1 else "NF"
+            else:
+                first_name = "NF"
+                last_name  = "NF"
         else:
             first_name = "NF"
             last_name  = "NF"
@@ -365,12 +382,12 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict:
         return unit, num, name, city, zip_code, has_data
 
     def _nf_mailing():
-        """Return all mailing fields as NF."""
-        return "NF", "NF", "NF", "NF", "NF", "NF", "NF"
+        """Return address fields as NF — state and country are always Quebec/Canada."""
+        return "NF", "NF", "NF", "NF", "NF", "Quebec", "Canada"
 
     if is_vpti:
         # VPTI: mailing comes from owners[0]
-        # If no owners, or owner has no address data → all NF
+        # If no owners, or owner has no address data → address fields NF, state/country always set
         owner = owners[0] if owners else None
         if owner:
             m_unit, m_street_num, m_street_name, mailing_city, mailing_zip, has_mailing = _extract_mailing(owner)
@@ -383,7 +400,7 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict:
             m_unit, m_street_num, m_street_name, mailing_city, mailing_zip, mailing_state, mailing_country = _nf_mailing()
     else:
         # Succession/60Days: mailing comes from contact_person (Legataire)
-        # If no address data → all NF
+        # If no address data → address fields NF, state/country always set
         m_unit, m_street_num, m_street_name, mailing_city, mailing_zip, has_mailing = _extract_mailing(contact_person)
         if has_mailing:
             mailing_state   = "Quebec"
@@ -511,7 +528,13 @@ def write_leads_to_excel(
 
     # ── Data rows ─────────────────────────────────────────────────────
     for row_idx, row_data in enumerate(rows, start=2):
-        row_values = [row_data.get(col, "") for col in COLUMNS]
+        # Ensure proper unicode strings — preserves accented chars (é, à, ê, etc.)
+        row_values = []
+        for col in COLUMNS:
+            val = row_data.get(col, "") or ""
+            if isinstance(val, bytes):
+                val = val.decode("utf-8", errors="replace")
+            row_values.append(str(val) if val != "" else "")
         ws.append(row_values)
 
         fill = EVEN_FILL if row_idx % 2 == 0 else ODD_FILL

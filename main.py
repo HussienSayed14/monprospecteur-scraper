@@ -18,7 +18,7 @@ GMAIL_USER         = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 SITE_EMAIL         = os.getenv("SITE_EMAIL")
 SITE_PASSWORD      = os.getenv("SITE_PASSWORD")
-OTP_SUBJECT_PREFIX = "Forwarded SMS From:"  # sender domain changes (mailer1/2/3/4...) but subject is always consistent
+OTP_SUBJECT_PREFIX = "Forward SMS From:"  # sender domain changes (mailer1/2/3/4...) but subject is always consistent
 
 # Webshare proxy — set these in .env
 # Format: 82.23.96.252:7478  (host:port only, credentials separate)
@@ -200,7 +200,7 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
             mail.select("inbox")
 
             # Search by subject — sender domain changes (mailer1/2/3/4)
-            # but subject always starts with "Forwarded SMS From:"
+            # but subject always starts with "Forward SMS From:"
             _, data = mail.search(None, f'(SUBJECT "{OTP_SUBJECT_PREFIX}")')
             ids = data[0].split()
             print(f"  📬 Found {len(ids)} email(s) with subject '{OTP_SUBJECT_PREFIX}'")
@@ -371,6 +371,7 @@ def fetch_all_documents(session: requests.Session, log=None) -> list:
             print(f"❌ {resp.text[:300]}")
             break
 
+        resp.encoding = "utf-8"  # preserve accented chars
         data = resp.json()
 
         documents = data if isinstance(data, list) else (
@@ -430,6 +431,7 @@ def fetch_document_details(doc_id: str, session: requests.Session) -> dict | Non
     url = f"{API_BASE}/documents/{doc_id}"
     print(f"  → GET {url}")
     resp = session.get(url, timeout=20)
+    resp.encoding = "utf-8"  # force UTF-8 to preserve accented chars (é, à, ê, etc.)
     print(f"    Status: {resp.status_code}")
     if resp.status_code == 200:
         return resp.json()
@@ -449,6 +451,7 @@ def unlock_vpti_document(doc_id: str, act_id: str, session: requests.Session, lo
     print(f"  → Unlocking VPTI: GET {url}")
     try:
         resp = session.get(url, timeout=30)
+        resp.encoding = "utf-8"  # preserve accented chars
         print(f"    Status: {resp.status_code}")
         if resp.status_code == 200:
             data = resp.json()
