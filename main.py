@@ -466,30 +466,64 @@ def fetch_document_details(doc_id: str, session: requests.Session) -> dict | Non
 def unlock_vpti_document(doc_id: str, act_id: str, session: requests.Session, log=None) -> dict | None:
     """
     VPTI leads may be locked — call the buy API to unlock and get full details.
-    POST/GET https://api.monprospecteur.com/documents/{doc_id}/{act_id}/buy
+    GET https://api.monprospecteur.com/documents/{doc_id}/{act_id}/buy
     Returns the full unlocked detail response, or None on failure.
     """
     url = f"{API_BASE}/documents/{doc_id}/{act_id}/buy"
     if log:
-        log.info("Unlocking VPTI document", url=url)
+        log.info("Calling buy/unlock API", url=url, doc=doc_id, act=act_id)
     print(f"  → Unlocking VPTI: GET {url}")
     try:
-        resp = session.get(url, timeout=30)
-        resp.encoding = "utf-8"  # preserve accented chars
+        resp = session.post(url, timeout=30)
+        resp.encoding = "utf-8"
         print(f"    Status: {resp.status_code}")
+        if log:
+            log.info("Buy API response", status=resp.status_code, doc=doc_id)
+
         if resp.status_code == 200:
             data = resp.json()
+            inner_doc = data.get("document", data)
+            is_now_unlocked = inner_doc.get("unlocked", False)
+            has_address     = bool(inner_doc.get("address") or inner_doc.get("shortAddress"))
             if log:
-                log.ok("VPTI document unlocked", doc=doc_id)
+                log.ok("Buy API succeeded",
+                       doc=doc_id,
+                       now_unlocked=str(is_now_unlocked),
+                       has_address=str(has_address),
+                       address=inner_doc.get("address") or inner_doc.get("shortAddress") or "N/A")
             return data
-        print(f"    ❌ Unlock failed: {resp.text[:300]}")
+
+        if resp.status_code == 404:
+            # Lead no longer exists on the server or act was removed
+            error_body = resp.text[:200]
+            print(f"    ⚠️  Buy API 404 — lead may no longer exist: {doc_id}")
+            if log:
+                log.warn("Buy API 404 — lead not found, skipping unlock",
+                         doc=doc_id, act=act_id, response=error_body)
+            return None
+
+        if resp.status_code in (402, 403):
+            # Payment required or insufficient credits
+            error_body = resp.text[:300]
+            print(f"    ⚠️  Buy API {resp.status_code} — insufficient credits or access denied")
+            if log:
+                log.warn(f"Buy API {resp.status_code} — credits/access issue",
+                         doc=doc_id, response=error_body)
+            return None
+
+        # Other non-200
+        error_body = resp.text[:500]
+        print(f"    ❌ Buy API failed: {resp.status_code} — {error_body}")
         if log:
-            log.error("VPTI unlock failed", status=resp.status_code, doc=doc_id)
+            log.error("Buy API failed",
+                      status=resp.status_code,
+                      response=error_body,
+                      doc=doc_id)
         return None
     except Exception as e:
-        print(f"    ❌ Unlock error: {e}")
+        print(f"    ❌ Buy API error: {e}")
         if log:
-            log.error("VPTI unlock error", error=str(e), doc=doc_id)
+            log.error("Buy API error", error=str(e), doc=doc_id)
         return None
 
 
