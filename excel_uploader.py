@@ -422,17 +422,13 @@ def clean_lead(list_doc: dict, detail_doc: dict = None) -> dict:
     # ── Cadastre (lot number) ─────────────────────────────────────────
     numero_lot = doc.get("cadastreNumber") or ""
 
-    # ── Property type ─────────────────────────────────────────────────
-    # VPTI: dynamic from propertyType field
-    # Others: always "R-House"
-    if is_vpti:
-        type_propriete = doc.get("propertyType") or list_doc.get("propertyType") or "R-House"
-    else:
-        type_propriete = "R-House"
+    # ── Property type — always from site data ────────────────────────
+    type_propriete = doc.get("propertyType") or list_doc.get("propertyType") or ""
 
     row = {
-        # Fixed values
+        # Type is always "Prospect" (static)
         "Type":           "Prospect",
+        # Type Propriete comes from site data (Unifamilial, Condo, etc.)
         "Type Propriete": type_propriete,
 
         # Mapped from doc type

@@ -35,7 +35,7 @@ load_dotenv()
 
 GMAIL_USER         = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-DEFAULT_TO         = os.getenv("SUMMARY_EMAIL_TO", GMAIL_USER)  # default: send to yourself
+DEFAULT_TO         = os.getenv("SUMMARY_EMAIL_TO")  # default: send to yourself
 
 
 # ── HTML email builder ────────────────────────────────────────────────────────
@@ -294,5 +294,5 @@ if __name__ == "__main__":
     }
     send_summary_email(
         stats_summary = dummy_stats,
-        to            = [GMAIL_USER], # type: ignore
+        to            = [DEFAULT_TO], # type: ignore
     )

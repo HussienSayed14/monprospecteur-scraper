@@ -46,7 +46,8 @@ def get_requests_proxies() -> dict | None:
         return None
     return {"http": url, "https": url}
 SESSION_FILE  = os.getenv("SESSION_FILE", "session.json")
-WEBHOOK_URL   = os.getenv("WEBHOOK_URL", "").strip()  # optional GET call after each lead
+WEBHOOK_URL        = os.getenv("WEBHOOK_URL", "").strip()
+CLEANUP_AFTER_RUN  = os.getenv("CLEANUP_AFTER_RUN", "false").lower() == "true"
 DOCUMENTS_URL      = "https://app.monprospecteur.com/app.html#/documents"
 LOGIN_URL          = "https://app.monprospecteur.com/auth.html#/connexion"
 
@@ -253,10 +254,13 @@ def get_otp_from_gmail(sent_after: datetime, wait=20, retries=6):
                     otp = re.search(r'\b(\d{6})\b', body)
                     if otp:
                         print(f"✅ OTP found: {otp.group(1)}")
+                        print(f"  📧 From email dated: {date_str}")
+                        print(f"  📝 Body snippet: {body[:80].strip()}")
                         mail.logout()
                         return otp.group(1)
                     else:
                         print(f"  ⚠️  Email found but no 6-digit code in body")
+                        print(f"  📝 Body snippet: {body[:80].strip()}")
                 else:
                     print(f"  ⏭  Email too old — skipping")
 
@@ -406,19 +410,39 @@ def filter_unread(all_docs: list, stats: RunStats) -> list:
     """Keep only docs where isRead == False AND type is one of the 3 allowed types."""
     stats.total_fetched = len(all_docs)
 
-    skipped_read    = [d for d in all_docs if d.get("isRead", True)]
-    unread_all      = [d for d in all_docs if not d.get("isRead", True)]
-    skipped_type    = [d for d in unread_all if d.get("type") not in ALLOWED_TYPES]
-    qualified       = [d for d in unread_all if d.get("type") in ALLOWED_TYPES]
+    skipped_read = [d for d in all_docs if d.get("isRead", True)]
+    unread_all   = [d for d in all_docs if not d.get("isRead", True)]
+    skipped_type = [d for d in unread_all if d.get("type") not in ALLOWED_TYPES]
+    qualified    = [d for d in unread_all if d.get("type") in ALLOWED_TYPES]
 
     stats.total_unread       = len(qualified)
     stats.total_skipped_read = len(skipped_read)
 
+    # Type breakdown for qualified leads
+    type_breakdown = {}
+    for d in qualified:
+        t = d.get("type", "Unknown")
+        type_breakdown[t] = type_breakdown.get(t, 0) + 1
+
+    # Type breakdown for skipped (wrong type)
+    skipped_type_breakdown = {}
+    for d in skipped_type:
+        t = d.get("type", "Unknown")
+        skipped_type_breakdown[t] = skipped_type_breakdown.get(t, 0) + 1
+
+    breakdown_str = ", ".join(f"{t}: {c}" for t, c in type_breakdown.items()) or "none"
+    skipped_str   = ", ".join(f"{t}: {c}" for t, c in skipped_type_breakdown.items()) or "none"
+
     print(f"\n🔍 Filter results:")
     print(f"   Total fetched  : {stats.total_fetched}")
-    print(f"   Skipped (read) : {len(skipped_read)}")
-    print(f"   Skipped (type) : {len(skipped_type)}  — types: {set(d.get('type') for d in skipped_type)}")
-    print(f"   ✅ Qualified   : {len(qualified)}")
+    print(f"   Already read   : {len(skipped_read)}")
+    print(f"   Skipped (type) : {len(skipped_type)}  ({skipped_str})")
+    print(f"   ✅ Qualified   : {len(qualified)}  ({breakdown_str})")
+    if type_breakdown:
+        for t, count in type_breakdown.items():
+            print(f"      • {t}: {count}")
+    else:
+        print(f"      (none)")
     return qualified
 
 
@@ -618,6 +642,71 @@ def clear_failed_uploads():
     if FAILED_UPLOADS_QUEUE_PATH.exists():
         FAILED_UPLOADS_QUEUE_PATH.unlink()
         print(f"🗑  Cleared failed uploads queue")
+
+
+# ─────────────────────────────────────────────
+# CLEANUP AFTER SUCCESSFUL RUN
+# ─────────────────────────────────────────────
+
+def cleanup_run_files(run_id: str, log=None):
+    """
+    After a fully successful run, delete:
+    - output/pdfs/         (downloaded act PDFs)
+    - output/prints/       (rendered print PDFs)
+    - output/data/raw_documents.json
+    - output/data/detail_*.json
+    - output/data/run_stats_*.json
+    - output/logs/run_{run_id}.log  (current run log)
+    Keeps: Excel file, failed queues, scrape_history.json
+    """
+    import shutil
+    deleted = []
+    errors  = []
+
+    def _del_file(p: Path):
+        try:
+            if p.exists():
+                p.unlink()
+                deleted.append(str(p))
+        except Exception as e:
+            errors.append(f"{p}: {e}")
+
+    def _del_dir_contents(d: Path):
+        try:
+            if d.exists():
+                for f in d.iterdir():
+                    if f.is_file():
+                        f.unlink()
+                        deleted.append(str(f))
+        except Exception as e:
+            errors.append(f"{d}: {e}")
+
+    # Delete all PDFs
+    _del_dir_contents(PDFS_DIR)
+    _del_dir_contents(PRINTS_DIR)
+
+    # Delete per-run data files
+    _del_file(DATA_DIR / "raw_documents.json")
+    for f in DATA_DIR.glob("detail_*.json"):
+        _del_file(f)
+    for f in DATA_DIR.glob("run_stats_*.json"):
+        _del_file(f)
+
+    # Delete current run log last (after we finish logging)
+    log_file = Path("output/logs") / f"run_{run_id}.log"
+
+    msg = f"Cleanup complete — deleted {len(deleted)} files"
+    print(f"\n🗑  {msg}")
+    if errors:
+        print(f"  ⚠️  {len(errors)} errors: {errors}")
+    if log:
+        log.info(msg)
+
+    # Delete the log file itself after everything is done
+    _del_file(log_file)
+
+    return deleted, errors
+
 
 
 # ─────────────────────────────────────────────
@@ -851,7 +940,16 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             raw_path = DATA_DIR / "raw_documents.json"
             raw_path.write_text(json.dumps(all_docs, indent=2, ensure_ascii=False))
 
-        log.ok(f"Documents ready", total=len(all_docs), to_process=len(docs_to_process))
+        # Log breakdown to file
+        type_breakdown = {}
+        for d in docs_to_process:
+            t = d.get("type", "?")
+            type_breakdown[t] = type_breakdown.get(t, 0) + 1
+        breakdown_str = ", ".join(f"{t}: {c}" for t, c in sorted(type_breakdown.items())) or "none"
+        log.ok(f"Documents ready",
+               total=len(all_docs),
+               to_process=len(docs_to_process),
+               breakdown=breakdown_str)
 
         if not docs_to_process:
             log.ok("No unread leads to process — exiting")
@@ -1151,6 +1249,17 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             excel_path        = excel_path if excel_rows else None,
             extra_attachments = [log.path],
         )
+
+        # ── Cleanup files after successful run ────────────────────────
+        if CLEANUP_AFTER_RUN:
+            all_failed = len(stats.failed) + len(all_failed_uploads if "all_failed_uploads" in dir() else [])
+            if all_failed == 0:
+                log.info("Cleanup enabled — deleting run files")
+                cleanup_run_files(run_id, log=log)
+            else:
+                log.info("Skipping cleanup — there were failures, keeping files for debugging")
+        else:
+            log.info("Cleanup disabled — files kept (set CLEANUP_AFTER_RUN=true in .env to enable)")
 
         browser.close()
 
