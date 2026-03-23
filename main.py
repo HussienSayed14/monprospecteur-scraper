@@ -1015,15 +1015,6 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
                 source_motivation_map[doc_id] = ""
                 log.info("Skipping property history for VPTI lead", doc=doc_id) if log else None
 
-            # ── Webhook call ───────────────────────────────────────────
-            if WEBHOOK_URL:
-                try:
-                    log.info("Calling webhook", url=WEBHOOK_URL)
-                    wh_resp = req_session.get(WEBHOOK_URL, timeout=15)
-                    log.ok(f"Webhook response", status=wh_resp.status_code)
-                except Exception as e:
-                    log.error("Webhook call failed", error=str(e))
-
             log.ok(f"Lead completed", address=address)
 
             if i < len(docs_to_process) - 1:
@@ -1269,6 +1260,15 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             r["drive_upload_log"] = r.get("drive_upload_log", [])
         stats.upload_sheet_ok  = getattr(stats, "upload_sheet_ok", True)
         stats.upload_sheet_log = getattr(stats, "upload_sheet_log", [])
+
+        # ── Webhook call — once at end after everything uploaded ─────
+        if WEBHOOK_URL:
+            try:
+                log.info("Calling webhook (end of run)", url=WEBHOOK_URL)
+                wh_resp = req_session.get(WEBHOOK_URL, timeout=15)
+                log.ok("Webhook response", status=wh_resp.status_code)
+            except Exception as e:
+                log.error("Webhook call failed", error=str(e))
 
         # Finish log and attach to email
         log.finish(
