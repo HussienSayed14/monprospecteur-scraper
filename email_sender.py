@@ -35,7 +35,10 @@ load_dotenv()
 
 GMAIL_USER         = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
-DEFAULT_TO         = os.getenv("SUMMARY_EMAIL_TO")  # default: send to yourself
+# Supports multiple recipients — comma-separated in .env
+# e.g. SUMMARY_EMAIL_TO=you@gmail.com,client@email.com
+_raw_to    = os.getenv("SUMMARY_EMAIL_TO", GMAIL_USER) or ""
+DEFAULT_TO = [e.strip() for e in _raw_to.split(",") if e.strip()]
 
 
 # ── HTML email builder ────────────────────────────────────────────────────────
@@ -53,7 +56,7 @@ def _fmt_toronto(iso_str: str) -> str:
         return iso_str
 
 
-def build_html_body(stats: dict, sheet_ok: bool = True, sheet_log: list = None) -> str: # type: ignore
+def build_html_body(stats: dict, sheet_ok: bool = True, sheet_log: list = None) -> str:
     succeeded = stats.get("succeeded", [])
     failed    = stats.get("failed", [])
 
@@ -187,11 +190,11 @@ to re-authenticate, then run <code>python main.py --retry-uploads</code></p>
 
 def send_summary_email(
     stats_summary:  dict,
-    to:             list[str] = None, # type: ignore
-    excel_path:     str = None, # type: ignore
-    extra_attachments: list[str] = None, # type: ignore
+    to:             list[str] = None,
+    excel_path:     str = None,
+    extra_attachments: list[str] = None,
     sheet_ok:       bool = True,
-    sheet_log:      list = None, # type: ignore
+    sheet_log:      list = None,
 ):
     """
     Send the run summary email.
@@ -203,7 +206,7 @@ def send_summary_email(
         excel_path:         optional path to leads Excel file to attach
         extra_attachments:  optional list of extra file paths to attach
     """
-    recipients = to or ([DEFAULT_TO] if DEFAULT_TO else [])
+    recipients = to or DEFAULT_TO or []
     if not recipients:
         print("⚠️  No recipients configured — skipping email")
         return
@@ -232,7 +235,7 @@ def send_summary_email(
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = GMAIL_USER # type: ignore
+    msg["From"]    = GMAIL_USER
     msg["To"]      = ", ".join(recipients)
 
     # Plain text fallback
@@ -267,8 +270,8 @@ def send_summary_email(
     print(f"\n📧 Sending summary email to {recipients}...")
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_USER, GMAIL_APP_PASSWORD) # type: ignore
-            server.sendmail(GMAIL_USER, recipients, msg.as_string())  # type: ignore
+            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            server.sendmail(GMAIL_USER, recipients, msg.as_string())
         print(f"  ✅ Email sent: {subject}")
     except Exception as e:
         print(f"  ❌ Email failed: {e}")
@@ -294,5 +297,5 @@ if __name__ == "__main__":
     }
     send_summary_email(
         stats_summary = dummy_stats,
-        to            = [DEFAULT_TO], # type: ignore
+        to            = [GMAIL_USER],
     )
