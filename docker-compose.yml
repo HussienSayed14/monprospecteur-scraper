@@ -40,8 +40,8 @@ services:
     # it only writes to output/logs/scheduler.log which is fine
     environment:
       TZ:              "America/Toronto"
-      SCHEDULE_HOUR:   "7"
-      SCHEDULE_MINUTE: "54"
+      SCHEDULE_HOUR:   "5"
+      SCHEDULE_MINUTE: "0"
       PROJECT_DIR:     "${PWD}"   # pass host project path so docker compose works
     volumes:
       - ./output:/app/output
