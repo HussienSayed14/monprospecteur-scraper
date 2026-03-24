@@ -36,7 +36,7 @@ def run_scraper():
     log("Starting scraper container...")
     try:
         result = subprocess.run(
-            ["docker", "compose", "run", "--rm", "scraper"],
+            ["docker-compose", "run", "--rm", "scraper"],
             cwd=PROJECT_DIR,
             capture_output=True,
             text=True,
