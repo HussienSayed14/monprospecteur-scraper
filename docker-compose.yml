@@ -41,7 +41,7 @@ services:
     environment:
       TZ:              "America/Toronto"
       SCHEDULE_HOUR:   "7"
-      SCHEDULE_MINUTE: "49"
+      SCHEDULE_MINUTE: "54"
       PROJECT_DIR:     "${PWD}"   # pass host project path so docker compose works
     volumes:
       - ./output:/app/output

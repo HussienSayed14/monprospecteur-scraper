@@ -2,10 +2,7 @@
 scheduler.py
 ────────────
 Runs inside the scheduler container.
-Triggers the scraper daily at 05:00 Toronto time by running:
-    docker compose run --rm scraper
-
-Logs every trigger to output/logs/scheduler.log
+Triggers the scraper daily at 05:00 Toronto time.
 """
 
 import time
@@ -18,6 +15,7 @@ TORONTO_TZ  = zoneinfo.ZoneInfo("America/Toronto")
 RUN_HOUR    = int(os.getenv("SCHEDULE_HOUR",   "5"))
 RUN_MINUTE  = int(os.getenv("SCHEDULE_MINUTE", "0"))
 LOG_FILE    = "/app/output/logs/scheduler.log"
+PROJECT_DIR = os.getenv("PROJECT_DIR", "/app")
 
 
 def log(msg: str):
@@ -34,19 +32,30 @@ def log(msg: str):
 
 def run_scraper():
     log("=" * 50)
-    log("Scheduled trigger — starting scraper container...")
+    log(f"Scheduled trigger — project dir: {PROJECT_DIR}")
+    log("Starting scraper container...")
     try:
         result = subprocess.run(
             ["docker", "compose", "run", "--rm", "scraper"],
-            cwd=os.getenv("PROJECT_DIR", "/app"),
-            timeout=36000,  # 10 hour max (200 leads × ~40s delay + processing time)
+            cwd=PROJECT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=36000,
         )
+        # Log both stdout and stderr so we can see exactly what happened
+        if result.stdout:
+            for line in result.stdout.strip().split("\n"):
+                log(f"[stdout] {line}")
+        if result.stderr:
+            for line in result.stderr.strip().split("\n"):
+                log(f"[stderr] {line}")
+
         if result.returncode == 0:
             log("Scraper finished successfully")
         else:
             log(f"Scraper finished with exit code {result.returncode}")
     except subprocess.TimeoutExpired:
-        log("ERROR: Scraper timed out after 2 hours")
+        log("ERROR: Scraper timed out after 10 hours")
     except Exception as e:
         log(f"ERROR: Could not start scraper: {e}")
     log("=" * 50)
@@ -54,6 +63,7 @@ def run_scraper():
 
 def main():
     log(f"Scheduler started — daily run at {RUN_HOUR:02d}:{RUN_MINUTE:02d} Toronto time")
+    log(f"Project directory: {PROJECT_DIR}")
     last_run_date = None
 
     while True:
