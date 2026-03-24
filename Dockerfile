@@ -1,21 +1,30 @@
-FROM python:3.12-slim
+FROM mcr.microsoft.com/playwright/python:v1.51.0-noble
 
 # Set timezone to Toronto
 ENV TZ=America/Toronto
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Install Docker CLI so scheduler can trigger the scraper container
-RUN apt-get update && apt-get install -y \
-    curl \
-    ca-certificates \
-    && curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-24.0.7.tgz \
-    | tar -xz --strip-components=1 -C /usr/local/bin docker/docker \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-COPY scheduler.py .
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN mkdir -p output/logs
+# Install Chromium only — skip Firefox and WebKit to keep image small
+# --with-deps installs only the system libs needed for Chromium
+RUN playwright install chromium --with-deps
 
-CMD ["python", "scheduler.py"]
+# Copy all scraper files
+COPY main.py .
+COPY excel_uploader.py .
+COPY drive_uploader.py .
+COPY sheets_uploader.py .
+COPY email_sender.py .
+COPY run_history.py .
+COPY logger.py .
+COPY google_auth.py .
+
+# Output directories (volumes mounted over these at runtime)
+RUN mkdir -p output/pdfs output/prints output/data output/failed output/logs
+
+CMD ["python", "main.py"]
