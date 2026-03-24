@@ -103,7 +103,7 @@ COLUMNS = [
 LEAD_SOURCE_MAP = {
     "Succession":       "Succession",
     "Avis de 60 jours": "60Daysnotice",
-    "Vente pour taxes": "Vpti",
+    "Vente pour taxes": "VPTI",
 }
 
 # ── Reference Number counter ──────────────────────────────────────────────────

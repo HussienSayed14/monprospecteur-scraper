@@ -59,7 +59,7 @@ ROOT_FOLDER_ID   = os.getenv("DRIVE_ROOT_FOLDER_ID", "")
 LEAD_TYPE_FOLDER = {
     "Succession":    "Succession",
     "60Daysnotice":  "60Daysnotice",
-    "Vpti":          "Vpti",
+    "Vpti":          "VPTI",
 }
 
 
