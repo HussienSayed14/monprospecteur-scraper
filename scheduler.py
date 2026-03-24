@@ -38,7 +38,7 @@ def run_scraper():
     try:
         result = subprocess.run(
             ["docker", "compose", "run", "--rm", "scraper"],
-            cwd="/app",
+            cwd=os.getenv("PROJECT_DIR", "/app"),
             timeout=36000,  # 10 hour max (200 leads × ~40s delay + processing time)
         )
         if result.returncode == 0:

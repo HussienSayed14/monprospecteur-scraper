@@ -7,13 +7,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    user: "1001:1001"
     container_name: monprospecteur_scraper
+    user: "1001:1001"
     env_file: .env
     environment:
-      HTTP_PROXY:           "http://prbspgoz:x8f4iu7gqoet@82.23.96.252:7478"
-      HTTPS_PROXY:          "http://prbspgoz:x8f4iu7gqoet@82.23.96.252:7478"
-      ALL_PROXY:            "http://prbspgoz:x8f4iu7gqoet@82.23.96.252:7478"
+      HTTP_PROXY:           "http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}"
+      HTTPS_PROXY:          "http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}"
+      ALL_PROXY:            "http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}"
       SESSION_FILE:         "/app/session/session.json"
       PLAYWRIGHT_HEADLESS:  "true"
       TZ:                   "America/Toronto"
@@ -35,13 +35,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.scheduler
-    user: "1001:1001"
     container_name: monprospecteur_scheduler
+    user: "1001:1001"
     environment:
       TZ:              "America/Toronto"
-      SCHEDULE_HOUR:   "5"    # 5 AM Toronto time
+      SCHEDULE_HOUR:   "5"
       SCHEDULE_MINUTE: "0"
+      PROJECT_DIR:     "${PWD}"   # pass host project path so docker compose works
     volumes:
-      - ./output:/app/output   # shares the same output folder
-      - /var/run/docker.sock:/var/run/docker.sock  # allows scheduler to start scraper container
-    restart: unless-stopped    # always running, restarts if server reboots
+      - ./output:/app/output
+      - /var/run/docker.sock:/var/run/docker.sock
+      - "${PWD}:${PWD}"           # mount project dir so docker compose can find it
+    working_dir: "${PWD}"
+    restart: unless-stopped
