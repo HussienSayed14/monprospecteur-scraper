@@ -403,6 +403,70 @@ def fetch_all_documents(session: requests.Session, log=None) -> list:
     return all_docs
 
 
+# ─────────────────────────────────────────────
+# SUBSCRIPTION CHECK
+# ─────────────────────────────────────────────
+
+def check_subscription_limit(session: requests.Session, log=None) -> tuple[bool, dict]:
+    """
+    POST /subscription/active
+    Returns (can_scrape, subscription_info)
+    can_scrape = False if totalReceivedActs >= max_allowed_acts
+    """
+    url = f"{API_BASE}/subscription/active"
+    if log:
+        log.info("Checking subscription limit", url=url)
+    try:
+        resp = session.post(url, timeout=20)
+        resp.encoding = "utf-8"
+        if resp.status_code != 200:
+            if log:
+                log.warn("Could not check subscription", status=resp.status_code)
+            return True, {}  # allow scraping if we can't check
+
+        data = resp.json()
+        total    = data.get("totalReceivedActs", 0)
+        max_acts = data.get("max_allowed_acts", 0)
+        extra    = data.get("extraActs", 0)
+        plan     = data.get("planName", "Unknown")
+        reset    = data.get("current_period_end")
+
+        # Convert reset timestamp to readable date
+        reset_date = ""
+        if reset:
+            from datetime import datetime, timezone
+            reset_date = datetime.fromtimestamp(reset, tz=timezone.utc).strftime("%Y-%m-%d")
+
+        info = {
+            "plan":       plan,
+            "used":       total,
+            "max":        max_acts,
+            "extra":      extra,
+            "reset_date": reset_date,
+        }
+
+        at_limit = total >= (max_acts + extra)
+        status   = f"{total}/{max_acts + extra} leads used"
+
+        if at_limit:
+            msg = f"Plan limit reached: {status} — scraping paused until {reset_date}"
+            print(f"\n⛔ {msg}")
+            if log:
+                log.warn(msg, plan=plan, reset=reset_date)
+        else:
+            msg = f"Subscription OK: {status} (plan: {plan}, resets: {reset_date})"
+            print(f"\n✅ {msg}")
+            if log:
+                log.ok(msg)
+
+        return not at_limit, info
+
+    except Exception as e:
+        if log:
+            log.warn("Subscription check failed — proceeding anyway", error=str(e))
+        return True, {}  # allow scraping if check fails
+
+
 # Only these 3 types are processed — anything else is skipped
 ALLOWED_TYPES = {"Succession", "Avis de 60 jours", "Vente pour taxes"}
 
@@ -931,6 +995,48 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
 
         storage_state = json.loads(Path(SESSION_FILE).read_text(encoding="utf-8"))
         req_session   = build_requests_session(storage_state)
+
+        # ── Check subscription limit before doing anything ────────────
+        log.step("Checking subscription plan limit")
+        can_scrape, sub_info = check_subscription_limit(req_session, log=log)
+        if not can_scrape:
+            # Plan fully used — send notification email and exit cleanly
+            log.warn("Scraping paused — plan limit reached",
+                     plan=sub_info.get("plan"),
+                     used=sub_info.get("used"),
+                     max=sub_info.get("max"),
+                     reset=sub_info.get("reset_date"))
+            stats.run_finished_at = datetime.now(timezone.utc)
+            log.finish(succeeded=0, failed=0)
+            try:
+                from email_sender import send_summary_email
+                limit_summary = {
+                    "run_started_at":     stats.run_started_at.isoformat(),
+                    "run_finished_at":    stats.run_finished_at.isoformat(),
+                    "duration_seconds":   0,
+                    "total_fetched":      0,
+                    "total_unread":       0,
+                    "total_skipped_read": 0,
+                    "succeeded_count":    0,
+                    "failed_count":       0,
+                    "succeeded":          [],
+                    "failed":             [{
+                        "id":      "N/A",
+                        "address": "N/A",
+                        "step":    "plan_limit_reached",
+                        "error":   f"Plan {sub_info.get('plan')} limit reached: {sub_info.get('used')}/{sub_info.get('max')} leads used. Resets on {sub_info.get('reset_date')}.",
+                    }],
+                }
+                send_summary_email(
+                    stats_summary = limit_summary,
+                    sheet_ok      = True,
+                    sheet_log     = [],
+                )
+                print("📧 Plan limit notification email sent")
+            except Exception as email_err:
+                print(f"❌ Could not send notification email: {email_err}")
+            browser.close()
+            return
 
         # ── Get docs to process ────────────────────────────────────────
         log.step("Fetching documents from API")
