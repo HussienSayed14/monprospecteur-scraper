@@ -467,6 +467,20 @@ def check_subscription_limit(session: requests.Session, log=None) -> tuple[bool,
         return True, {}  # allow scraping if check fails
 
 
+def get_remaining_leads(sub_info: dict) -> int:
+    """
+    Returns how many leads are left in the current plan.
+    Returns -1 if unlimited (check failed or no info).
+    """
+    if not sub_info:
+        return -1
+    used  = sub_info.get("used", 0)
+    max_  = sub_info.get("max", 0)
+    extra = sub_info.get("extra", 0)
+    remaining = (max_ + extra) - used
+    return max(remaining, 0)
+
+
 # Only these 3 types are processed — anything else is skipped
 ALLOWED_TYPES = {"Succession", "Avis de 60 jours", "Vente pour taxes"}
 
@@ -1038,6 +1052,11 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             browser.close()
             return
 
+        # Store remaining leads for use when filtering
+        remaining_leads = get_remaining_leads(sub_info)
+        if remaining_leads >= 0:
+            log.info(f"Remaining leads in plan: {remaining_leads}")
+
         # ── Get docs to process ────────────────────────────────────────
         log.step("Fetching documents from API")
         if test_mode:
@@ -1086,6 +1105,16 @@ def scrape(retry_mode: bool = False, test_mode: bool = False):
             t = d.get("type", "?")
             type_breakdown[t] = type_breakdown.get(t, 0) + 1
         breakdown_str = ", ".join(f"{t}: {c}" for t, c in sorted(type_breakdown.items())) or "none"
+        # Cap docs to process based on remaining plan quota
+        if not test_mode and remaining_leads >= 0 and len(docs_to_process) > remaining_leads:
+            original_count  = len(docs_to_process)
+            docs_to_process = docs_to_process[:remaining_leads]
+            log.warn(f"Plan quota cap applied",
+                     original=original_count,
+                     capped_to=remaining_leads,
+                     reason=f"only {remaining_leads} leads remaining in plan")
+            print(f"\n⚠️  Capping to {remaining_leads} leads (plan quota limit)")
+
         log.ok(f"Documents ready",
                total=len(all_docs),
                to_process=len(docs_to_process),
