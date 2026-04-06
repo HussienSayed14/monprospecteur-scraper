@@ -860,17 +860,18 @@ def process_doc(doc: dict, req_session, page, stats: RunStats, raw_docs_by_id: d
     if log: log.info("Step 1/3 — Fetching detail API", doc=doc_id)
     try:
         human_delay(1.0, 3.0)
-        if is_vpti and is_locked:
-            if log: log.info("VPTI lead is locked — calling unlock/buy API", doc=doc_id, act=act_id)
+        if is_locked:
+            # All types: if lead is locked call the buy/unlock API first
+            if log: log.info("Lead is locked — calling unlock/buy API", doc=doc_id, act=act_id, type=doc_type)
             unlocked_data = unlock_vpti_document(doc_id, act_id, req_session, log=log)
             if unlocked_data:
                 detail = unlocked_data.get("document", unlocked_data)
-                if log: log.ok("VPTI unlocked successfully", doc=doc_id)
+                if log: log.ok("Lead unlocked successfully", doc=doc_id, type=doc_type)
             else:
                 if log: log.warn("Unlock failed — falling back to regular detail API", doc=doc_id)
                 detail = fetch_document_details(doc_id, req_session)
         else:
-            if log: log.info("Calling regular detail API", doc=doc_id)
+            if log: log.info("Lead already unlocked — calling regular detail API", doc=doc_id)
             detail = fetch_document_details(doc_id, req_session)
 
         if detail is None:
